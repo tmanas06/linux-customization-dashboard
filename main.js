@@ -207,10 +207,11 @@ ipcMain.handle('fs:openPath', (_e, p) => {
   return true;
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   sampleCpu();
   setInterval(sampleCpu, 1000);
   createWindow();
+  try { await win.webContents.session.clearCache(); } catch {}
 });
 
 app.on('window-all-closed', () => app.quit());

@@ -258,9 +258,10 @@ export const clockWidgets = {
     name: 'World Clock',
     desc: 'Track time across multiple timezones',
     defaultSize: { w: 2, h: 2 },
-    defaults: { zones: ['UTC', 'America/New_York', 'Asia/Tokyo'] },
+    defaults: { zones: ['UTC', 'America/New_York', 'Asia/Tokyo'], format: '12h' },
     settings: [
-      { key: 'zones', label: 'Timezones', type: 'zonelist' }
+      { key: 'zones', label: 'Timezones', type: 'zonelist' },
+      { key: 'format', label: 'Time format', type: 'select', options: [{ v: '12h', l: '12-hour (AM/PM)' }, { v: '24h', l: '24-hour' }] }
     ],
     mount(body, item, api) {
       body.style.position = 'relative';
@@ -274,16 +275,18 @@ export const clockWidgets = {
       const tzSearchWrap = el('div', 'zone-search-wrap');
       const tzSearch = el('input', 'zone-search');
       tzSearch.type = 'text';
-      tzSearch.placeholder = 'Search timezone…';
+      tzSearch.placeholder = 'Search timezone to add…';
       tzSearch.setAttribute('aria-label', 'Search timezone');
       const tzDropdown = el('div', 'zone-dropdown');
       tzSearchWrap.append(tzSearch, tzDropdown);
       body.appendChild(tzSearchWrap);
       body.appendChild(list);
 
+      const is12h = () => item.settings.format !== '24h';
       let zones = [...(item.settings.zones || [])];
       let rows = [];
       let highlightedIdx = -1;
+      let suppressBlur = false;
 
       const popularZones = [
         'UTC', 'America/New_York', 'America/Chicago', 'America/Denver',
@@ -293,7 +296,7 @@ export const clockWidgets = {
         'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Madrid',
         'Europe/Rome', 'Europe/Amsterdam', 'Europe/Moscow', 'Europe/Istanbul',
         'Europe/Athens', 'Europe/Warsaw', 'Europe/Stockholm', 'Europe/Zurich',
-        'Asia/Dubai', 'Asia/Kolkata', 'Asia/Kolkata', 'Asia/Bangkok',
+        'Asia/Dubai', 'Asia/Kolkata', 'Asia/Bangkok',
         'Asia/Singapore', 'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Seoul',
         'Asia/Hong_Kong', 'Asia/Taipei', 'Asia/Jakarta', 'Asia/Karachi',
         'Australia/Sydney', 'Australia/Melbourne', 'Australia/Brisbane',
@@ -315,16 +318,21 @@ export const clockWidgets = {
         return merged.slice(0, 20);
       };
 
+      const closeDropdown = () => {
+        tzDropdown.classList.remove('open');
+        highlightedIdx = -1;
+      };
+
       const renderDropdown = (query) => {
         tzDropdown.replaceChildren();
         highlightedIdx = -1;
         if (!query && zones.length >= 12) {
-          tzDropdown.classList.remove('open');
+          closeDropdown();
           return;
         }
         const matches = filterZones(query || '');
         if (!matches.length) {
-          tzDropdown.classList.remove('open');
+          closeDropdown();
           return;
         }
         matches.forEach((tz, i) => {
@@ -332,17 +340,20 @@ export const clockWidgets = {
           const city = el('span', 'zone-option-city', cityOf(tz));
           const full = el('span', 'zone-option-tz', tz);
           opt.append(city, full);
-          opt.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            addZone(tz);
-            tzSearch.value = '';
-            tzDropdown.classList.remove('open');
-          });
           opt.addEventListener('mouseenter', () => {
             highlightedIdx = i;
             tzDropdown.querySelectorAll('.zone-option').forEach((n, j) =>
               n.classList.toggle('highlighted', j === i)
             );
+          });
+          opt.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            suppressBlur = true;
+            addZone(tz);
+            tzSearch.value = '';
+            closeDropdown();
+            setTimeout(() => { suppressBlur = false; }, 50);
           });
           tzDropdown.appendChild(opt);
         });
@@ -364,23 +375,43 @@ export const clockWidgets = {
         } else if (e.key === 'Enter') {
           e.preventDefault();
           if (highlightedIdx >= 0 && opts[highlightedIdx]) {
-            opts[highlightedIdx].dispatchEvent(new Event('mousedown'));
+            opts[highlightedIdx].dispatchEvent(new Event('mousedown', { bubbles: true }));
+          } else if (opts.length === 1) {
+            opts[0].dispatchEvent(new Event('mousedown', { bubbles: true }));
           }
         } else if (e.key === 'Escape') {
           tzSearch.blur();
-          tzDropdown.classList.remove('open');
+          closeDropdown();
         }
       });
       tzSearch.addEventListener('blur', () => {
-        setTimeout(() => tzDropdown.classList.remove('open'), 150);
+        if (suppressBlur) return;
+        setTimeout(() => closeDropdown(), 150);
       });
 
+      const showToast = (msg) => {
+        const t = document.getElementById('toast');
+        if (!t) return;
+        const icon = t.querySelector('.toast-icon');
+        const text = t.querySelector('.toast-text');
+        if (icon) icon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+        if (text) text.textContent = msg;
+        t.classList.add('show');
+        clearTimeout(t._tt);
+        t._tt = setTimeout(() => t.classList.remove('show'), 2200);
+      };
+
       const addZone = (tz) => {
-        if (!tz || zones.includes(tz)) return;
+        if (!tz) return;
+        if (zones.includes(tz)) {
+          showToast(`${cityOf(tz)} is already in your list`);
+          return;
+        }
         zones.push(tz);
         item.settings.zones = zones;
         api.save();
         renderRows();
+        showToast(`Added ${cityOf(tz)}`);
       };
 
       const removeZone = (tz) => {
@@ -388,31 +419,32 @@ export const clockWidgets = {
         item.settings.zones = zones;
         api.save();
         renderRows();
+        showToast(`Removed ${cityOf(tz)}`);
       };
 
       const renderRows = () => {
         list.replaceChildren();
         rows = [];
+        if (zones.length === 0) {
+          const empty = el('div', 'zone-empty', 'No timezones added yet. Search above to add one.');
+          list.appendChild(empty);
+          return;
+        }
         zones.forEach((tz) => {
           const row = el('div', 'zone-row');
           const cityEl = el('span', 'zone-city', cityOf(tz));
           const tzLabel = el('span', 'zone-tz-label', tz === 'system' ? 'Local' : tz.split('/').pop().replace(/_/g, ' '));
           const time = el('span', 'zone-time');
-          row.append(cityEl, tzLabel, time);
-
-          if (api.isEditing()) {
-            const rmBtn = document.createElement('button');
-            rmBtn.className = 'zone-rm';
-            rmBtn.type = 'button';
-            rmBtn.title = 'Remove timezone';
-            rmBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
-            rmBtn.addEventListener('click', (e) => {
-              e.stopPropagation();
-              removeZone(tz);
-            });
-            row.appendChild(rmBtn);
-          }
-
+          const rmBtn = document.createElement('button');
+          rmBtn.className = 'zone-rm';
+          rmBtn.type = 'button';
+          rmBtn.title = 'Remove timezone';
+          rmBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+          rmBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeZone(tz);
+          });
+          row.append(cityEl, tzLabel, time, rmBtn);
           list.appendChild(row);
           rows.push({ tz, time });
         });
@@ -420,9 +452,17 @@ export const clockWidgets = {
 
       const update = () => {
         const now = new Date();
+        const use12 = is12h();
         for (const r of rows) {
-          const p = timeParts(now, r.tz, false);
-          r.time.textContent = `${p.h}:${p.m}`;
+          const p = timeParts(now, r.tz, use12);
+          if (use12) {
+            r.time.innerHTML = '';
+            r.time.appendChild(document.createTextNode(`${p.h}:${p.m}`));
+            const ampm = el('span', 'zone-ampm', p.dayPeriod);
+            r.time.appendChild(ampm);
+          } else {
+            r.time.textContent = `${p.h}:${p.m}`;
+          }
         }
       };
 

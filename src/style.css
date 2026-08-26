@@ -826,29 +826,49 @@ body[data-theme="light"] .zone-row { border-bottom-color: rgba(0,0,0,.04); }
   color: var(--text);
   letter-spacing: .02em;
   flex-shrink: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+}
+.zone-ampm {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  opacity: .85;
 }
 .zone-rm {
   appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: none;
   border-radius: 50%;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  opacity: 0;
+  opacity: .5;
   transition: all var(--transition-fast);
   flex-shrink: 0;
 }
 .zone-rm svg { width: 12px; height: 12px; }
 .zone-row:hover .zone-rm { opacity: 1; }
 .zone-rm:hover {
-  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
   color: var(--danger);
+  opacity: 1;
+}
+.zone-empty {
+  text-align: center;
+  color: var(--muted);
+  font-size: 11.5px;
+  padding: 16px 8px;
+  font-weight: 500;
+  line-height: 1.5;
 }
 .zone-globe {
   position: absolute;
