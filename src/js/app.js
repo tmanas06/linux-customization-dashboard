@@ -387,6 +387,7 @@ function onCardPointerDown(e, item, card) {
   }
 
   const rect = card.getBoundingClientRect();
+  const canvasRect = canvas.getBoundingClientRect();
   drag = {
     id: item.id,
     item,
@@ -395,6 +396,14 @@ function onCardPointerDown(e, item, card) {
     startY: e.clientY,
     offX: e.clientX - rect.left,
     offY: e.clientY - rect.top,
+    baseLeft: rect.left,
+    baseTop: rect.top,
+    baseRight: rect.right,
+    baseBottom: rect.bottom,
+    canvasLeft: canvasRect.left,
+    canvasTop: canvasRect.top,
+    canvasRight: canvasRect.right,
+    canvasBottom: canvasRect.bottom,
     started: false,
     placeholder: null,
     sim: null,
@@ -418,12 +427,19 @@ function startDragVisual() {
 
 function onDragMove(e) {
   if (!drag) return;
-  const dx = e.clientX - drag.startX;
-  const dy = e.clientY - drag.startY;
+  let dx = e.clientX - drag.startX;
+  let dy = e.clientY - drag.startY;
   if (!drag.started) {
     if (Math.hypot(dx, dy) < 6) return;
     startDragVisual();
   }
+
+  const minDx = drag.canvasLeft - drag.baseLeft;
+  const maxDx = drag.canvasRight - drag.baseRight;
+  const minDy = drag.canvasTop - drag.baseTop;
+  const maxDy = drag.canvasBottom - drag.baseBottom;
+  dx = clamp(dx, minDx, maxDx);
+  dy = clamp(dy, minDy, maxDy);
   drag.el.style.transform = `translate(${dx}px, ${dy}px)`;
 
   const m = gridMetrics();

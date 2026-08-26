@@ -379,6 +379,7 @@ body[data-theme="light"] .win-btn:hover { background: rgba(0,0,0,.06); }
   inset: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  clip-path: inset(0);
 }
 
 #preview-hint {
