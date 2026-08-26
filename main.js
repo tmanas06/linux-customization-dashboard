@@ -76,9 +76,13 @@ function createWindow() {
   if (process.env.DASH_SHOT) {
     win.webContents.once('did-finish-load', () => {
       setTimeout(async () => {
-        const img = await win.webContents.capturePage();
-        fs.writeFileSync(process.env.DASH_SHOT, img.toPNG());
-        console.log('SHOT_SAVED');
+        try {
+          const img = await win.webContents.capturePage();
+          fs.writeFileSync(process.env.DASH_SHOT, img.toPNG());
+          console.log('SHOT_SAVED');
+        } catch (e) {
+          console.error('SHOT_FAILED:', e.message);
+        }
         app.exit(0);
       }, 3000);
     });
@@ -155,6 +159,52 @@ ipcMain.handle('app:openExternal', (_e, url) => {
     return true;
   }
   return false;
+});
+
+ipcMain.handle('win:minimize', () => {
+  if (win) win.minimize();
+  return true;
+});
+
+ipcMain.handle('win:maximize', () => {
+  if (!win) return false;
+  if (win.isMaximized()) win.unmaximize();
+  else win.maximize();
+  return win.isMaximized();
+});
+
+ipcMain.handle('win:close', () => {
+  if (win) win.close();
+  return true;
+});
+
+const SIDEBAR_DIRS = [
+  { key: 'home', name: 'Home' },
+  { key: 'documents', name: 'Documents' },
+  { key: 'downloads', name: 'Downloads' },
+  { key: 'music', name: 'Music' },
+  { key: 'pictures', name: 'Pictures' },
+  { key: 'videos', name: 'Videos' }
+];
+
+ipcMain.handle('sys:dirs', () => {
+  const home = os.homedir();
+  const out = [];
+  for (const d of SIDEBAR_DIRS) {
+    const p = d.key === 'home' ? home : path.join(home, d.name);
+    try {
+      if (fs.existsSync(p)) out.push({ key: d.key, name: d.name, path: p });
+    } catch {}
+  }
+  return out;
+});
+
+ipcMain.handle('fs:openPath', (_e, p) => {
+  if (typeof p !== 'string' || !path.isAbsolute(p)) return false;
+  const allowed = [os.homedir(), '/media', '/mnt', '/run/media'];
+  if (!allowed.some((root) => (p === root || p.startsWith(root + path.sep)))) return false;
+  shell.openPath(p);
+  return true;
 });
 
 app.whenReady().then(() => {

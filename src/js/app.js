@@ -7,16 +7,16 @@ const dash = window.dashboard;
 const $ = (s) => document.querySelector(s);
 
 const grid = $('#grid');
+const canvas = $('#canvas');
+const canvasScroll = $('#canvas-scroll');
 const btnAdd = $('#btn-add');
 const btnEdit = $('#btn-edit');
-const btnReset = $('#btn-reset');
-const btnDesktop = $('#btn-desktop');
+const btnPreview = $('#btn-preview');
 const btnSave = $('#btn-save');
+const btnSettings = $('#btn-settings');
 const toast = $('#toast');
 const desktopBg = $('#desktop-bg');
 const previewHint = $('#preview-hint');
-const selTheme = $('#sel-theme');
-const inAccent = $('#in-accent');
 const drawer = $('#drawer');
 const drawerList = $('#drawer-list');
 const overlay = $('#modal-overlay');
@@ -105,14 +105,12 @@ function showToast(msg) {
 function applyTheme() {
   document.body.dataset.theme = config.theme || 'dark';
   document.documentElement.style.setProperty('--accent', config.accent || '');
-  selTheme.value = config.theme || 'dark';
-  inAccent.value = config.accent || '#4da3ff';
 }
 
 function computeCols() {
   const cfgCols = Number(config && config.desktop && config.desktop.cols);
   if (cfgCols) return clamp(cfgCols, 2, 8);
-  const w = window.innerWidth;
+  const w = canvas ? canvas.clientWidth : window.innerWidth;
   return w >= 1280 ? 6 : w >= 900 ? 4 : 2;
 }
 
@@ -122,8 +120,33 @@ function applyDesktopStyles() {
   grid.style.setProperty('--cols', cols);
   grid.style.setProperty('--rowh', `${clamp(Number(d.rowH) || 100, 70, 200)}px`);
   const m = clamp(Number(d.margin ?? 40), 0, 300);
-  grid.style.padding = `6px ${Math.min(m, 60)}px ${Math.max(24, m)}px`;
+  const pt = 14;
+  const pl = Math.min(m, 60);
+  const pr = Math.min(m, 60);
+  const pb = Math.max(28, m);
+  grid.style.padding = `${pt}px ${pr}px ${pb}px ${pl}px`;
+  grid.style.setProperty('--pad-t', pt + 'px');
+  grid.style.setProperty('--pad-l', pl + 'px');
+  grid.style.setProperty('--pad-r', pr + 'px');
+  grid.style.setProperty('--pad-b', pb + 'px');
   document.documentElement.style.setProperty('--widget-op', clamp(Number(d.opacity ?? 100), 10, 100));
+  requestAnimationFrame(updateGuides);
+}
+
+function updateGuides() {
+  if (!grid || !grid.clientWidth) return;
+  const cs = getComputedStyle(grid);
+  const padL = parseFloat(cs.paddingLeft) || 0;
+  const padR = parseFloat(cs.paddingRight) || 0;
+  const padT = parseFloat(cs.paddingTop) || 0;
+  const padB = parseFloat(cs.paddingBottom) || 0;
+  const gapX = parseFloat(cs.columnGap) || 14;
+  const gapY = parseFloat(cs.rowGap) || gapX;
+  const inner = Math.max(0, grid.clientWidth - padL - padR);
+  const colW = (inner - (cols - 1) * gapX) / cols;
+  const rowH = parseFloat(cs.gridAutoRows) || 100;
+  grid.style.setProperty('--step-x', (colW + gapX) + 'px');
+  grid.style.setProperty('--step-y', (rowH + gapY) + 'px');
 }
 
 async function loadWallpaper() {
@@ -139,13 +162,8 @@ async function loadWallpaper() {
 function updatePreviewHint() {
   const enabled = !!(config && config.desktop && config.desktop.enabled);
   previewHint.textContent = !enabled
-    ? 'Desktop mode is off — click "Desktop" to put these widgets on your homescreen'
+    ? 'Tip: enable desktop mode in Settings to pin widgets to your homescreen'
     : 'Live preview of your desktop — drag to arrange, Save puts it on your screen';
-}
-
-function applyDesktopBtn() {
-  btnDesktop.classList.toggle('active', !!(config.desktop && config.desktop.enabled));
-  updatePreviewHint();
 }
 
 function disposeAll() {
@@ -260,10 +278,8 @@ function renderAll() {
 function setEditing(v) {
   editMode = v;
   document.body.classList.toggle('editing', v);
-  btnEdit.textContent = v ? 'Done' : 'Edit dashboard';
   btnEdit.classList.toggle('active', v);
-  btnAdd.hidden = !v;
-  btnSave.hidden = !v;
+  btnPreview.classList.toggle('active', !v);
   if (!v) {
     clearSelection();
     closeDrawer();
@@ -281,6 +297,12 @@ function buildCard(item) {
 
   const head = document.createElement('header');
   head.className = 'w-head';
+
+  const grip = document.createElement('span');
+  grip.className = 'w-grip';
+  grip.innerHTML = ICONS.grip;
+  head.appendChild(grip);
+
   head.appendChild(Object.assign(document.createElement('span'), {
     className: 'w-title',
     textContent: def.name
@@ -301,7 +323,7 @@ function buildCard(item) {
     e.stopPropagation();
     openSettings(item);
   });
-  const del = iconBtn(ICONS.x, 'icon-btn red', 'Remove widget');
+  const del = iconBtn(ICONS.trash, 'icon-btn red', 'Remove widget');
   del.addEventListener('click', (e) => {
     e.stopPropagation();
     if (!confirm(`Remove "${def.name}" from the dashboard?`)) return;
@@ -434,12 +456,14 @@ function onDragUp(e) {
   const d = drag;
   drag = null;
 
-  d.el.style.transform = '';
+  const prevRect = d.el.getBoundingClientRect();
+
   d.el.classList.remove('dragging');
   document.body.classList.remove('drag-active');
   if (d.placeholder) d.placeholder.remove();
 
   if (!d.started) {
+    d.el.style.transform = '';
     selectItem(d.id);
     return;
   }
@@ -447,10 +471,29 @@ function onDragUp(e) {
     applySim(d.sim);
     syncPositions();
     scheduleSave();
-  } else if (d.valid === false) {
-    showToast('No room there — placement blocked');
+    d.el.style.transform = '';
+    flipTo(d.el, prevRect);
+  } else {
+    d.el.style.transform = '';
+    if (d.valid === false) showToast('No room there — placement blocked');
   }
   selectItem(d.id);
+}
+
+function flipTo(el, prevRect) {
+  if (!prevRect) return;
+  requestAnimationFrame(() => {
+    const last = el.getBoundingClientRect();
+    const dx = prevRect.left - last.left;
+    const dy = prevRect.top - last.top;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+    el.style.transform = `translate(${dx}px, ${dy}px)`;
+    el.style.transition = 'none';
+    el.offsetHeight;
+    el.style.transition = 'transform .2s cubic-bezier(.2,.9,.25,1.12)';
+    el.style.transform = '';
+    setTimeout(() => { el.style.transition = ''; }, 220);
+  });
 }
 
 function cancelDrag() {
@@ -569,7 +612,7 @@ function addItem(type) {
   selectItem(item.id);
   showToast(`${WIDGETS[type].name} added`);
   requestAnimationFrame(() => {
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    canvasScroll.scrollTo({ top: canvasScroll.scrollHeight, behavior: 'smooth' });
   });
 }
 
@@ -790,14 +833,66 @@ function openSettings(item) {
   openModal(`${def.name} — Settings`, build);
 }
 
-function openDesktopModal() {
+function openSettingsModal() {
   const d = { enabled: false, cols: 6, margin: 40, opacity: 80, rowH: 100, ...(config.desktop || {}) };
 
   const build = (container) => {
+    /* --- Appearance --- */
+    const secApp = document.createElement('div');
+    secApp.className = 'modal-section';
+    const titleApp = document.createElement('div');
+    titleApp.className = 'modal-section-title';
+    titleApp.textContent = 'Appearance';
+    secApp.appendChild(titleApp);
+
+    const themeWrap = document.createElement('div');
+    themeWrap.className = 'field';
+    const themeLbl = document.createElement('label');
+    themeLbl.textContent = 'Theme';
+    const themeSel = document.createElement('select');
+    for (const [v, l] of [['dark','Dark'],['midnight','Midnight'],['nord','Nord'],['light','Light']]) {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = l;
+      themeSel.appendChild(o);
+    }
+    themeSel.value = config.theme || 'dark';
+    themeWrap.append(themeLbl, themeSel);
+    secApp.appendChild(themeWrap);
+
+    const accWrap = document.createElement('div');
+    accWrap.className = 'field';
+    const accLbl = document.createElement('label');
+    accLbl.textContent = 'Accent color';
+    const accIn = document.createElement('input');
+    accIn.type = 'color';
+    accIn.value = config.accent || '#4da3ff';
+    accWrap.append(accLbl, accIn);
+    secApp.appendChild(accWrap);
+
+    themeSel.addEventListener('change', () => {
+      config.theme = themeSel.value;
+      applyTheme();
+      scheduleSave();
+    });
+    accIn.addEventListener('input', () => {
+      config.accent = accIn.value;
+      applyTheme();
+      scheduleSave();
+    });
+    container.appendChild(secApp);
+
+    /* --- Desktop widgets --- */
+    const secDesk = document.createElement('div');
+    secDesk.className = 'modal-section';
+    const titleDesk = document.createElement('div');
+    titleDesk.className = 'modal-section-title';
+    titleDesk.textContent = 'Desktop Widgets';
+    secDesk.appendChild(titleDesk);
+
     const note = document.createElement('p');
-    note.style.cssText = 'font-size:12px;color:var(--muted);margin:0 0 14px;';
-    note.textContent = 'These widgets are drawn directly on your desktop (behind your windows). Requires the companion GNOME extension: npm run extension:install';
-    container.appendChild(note);
+    note.style.cssText = 'font-size:12px;color:var(--muted);margin:0 0 12px;';
+    note.textContent = 'These widgets are drawn directly on your desktop (behind your windows). Requires the companion GNOME extension.';
+    secDesk.appendChild(note);
 
     const enabledWrap = document.createElement('div');
     enabledWrap.className = 'field field-check';
@@ -809,7 +904,7 @@ function openDesktopModal() {
     enabledLbl.htmlFor = 'desk-enabled';
     enabledLbl.textContent = 'Show widgets on the desktop';
     enabledWrap.append(enabled, enabledLbl);
-    container.appendChild(enabledWrap);
+    secDesk.appendChild(enabledWrap);
 
     const mkSelect = (labelText, key, options) => {
       const wrap = document.createElement('div');
@@ -819,45 +914,56 @@ function openDesktopModal() {
       const sel = document.createElement('select');
       for (const o of options) {
         const opt = document.createElement('option');
-        opt.value = o;
-        opt.textContent = o;
+        opt.value = o; opt.textContent = o;
         sel.appendChild(opt);
       }
       sel.value = d[key];
       sel.dataset.deskkey = key;
       wrap.append(lbl, sel);
-      container.appendChild(wrap);
+      secDesk.appendChild(wrap);
       return sel;
     };
-
     mkSelect('Columns', 'cols', [3, 4, 5, 6, 7, 8]);
 
     const mkRange = (labelText, key, min, max, step, unit) => {
       const wrap = document.createElement('div');
       wrap.className = 'field';
       const lbl = document.createElement('label');
-      lbl.textContent = `${labelText}: `;
+      lbl.textContent = labelText + ': ';
       const val = document.createElement('span');
       val.textContent = `${d[key]}${unit}`;
       lbl.appendChild(val);
       const range = document.createElement('input');
-      range.type = 'range';
-      range.min = min;
-      range.max = max;
-      range.step = step;
-      range.value = d[key];
+      range.type = 'range'; range.min = min; range.max = max; range.step = step; range.value = d[key];
       range.style.width = '100%';
       range.dataset.deskkey = key;
-      range.addEventListener('input', () => {
-        val.textContent = `${range.value}${unit}`;
-      });
+      range.addEventListener('input', () => { val.textContent = `${range.value}${unit}`; });
       wrap.append(lbl, range);
-      container.appendChild(wrap);
+      secDesk.appendChild(wrap);
     };
-
     mkRange('Screen margin', 'margin', 0, 300, 10, 'px');
     mkRange('Panel opacity', 'opacity', 20, 100, 5, '%');
     mkRange('Row height', 'rowH', 70, 180, 5, 'px');
+    container.appendChild(secDesk);
+
+    /* --- Reset --- */
+    const secReset = document.createElement('div');
+    secReset.className = 'modal-section';
+    const resetBtn = document.createElement('button');
+    resetBtn.className = 'btn danger';
+    resetBtn.type = 'button';
+    resetBtn.textContent = 'Reset layout to defaults';
+    resetBtn.addEventListener('click', () => {
+      if (!confirm('Reset the dashboard to its default layout?')) return;
+      config.layout = defaultLayout();
+      clearSelection();
+      renderAll();
+      scheduleSave();
+      closeModal();
+      showToast('Layout reset to defaults');
+    });
+    secReset.appendChild(resetBtn);
+    container.appendChild(secReset);
 
     return () => {
       const next = { ...d };
@@ -869,15 +975,15 @@ function openDesktopModal() {
     };
   };
 
-  openModal('Desktop widgets', build);
+  openModal('Settings', build);
 }
 
-btnDesktop.addEventListener('click', openDesktopModal);
+$('#btn-settings').addEventListener('click', openSettingsModal);
 
 $('#btn-modal-save').addEventListener('click', () => {
   if (modalCollector) modalCollector();
   closeModal();
-  applyDesktopBtn();
+  updatePreviewHint();
   applyDesktopStyles();
   normalizeLayout();
   renderAll();
@@ -889,30 +995,16 @@ overlay.addEventListener('mousedown', (e) => {
   if (e.target === overlay) closeModal();
 });
 
-btnEdit.addEventListener('click', () => setEditing(!editMode));
+btnEdit.addEventListener('click', () => setEditing(true));
+btnPreview.addEventListener('click', () => setEditing(false));
 btnAdd.addEventListener('click', openDrawer);
 btnSave.addEventListener('click', saveNow);
 $('#btn-drawer-close').addEventListener('click', closeDrawer);
 
-btnReset.addEventListener('click', () => {
-  if (!confirm('Reset the dashboard to its default layout?')) return;
-  config.layout = defaultLayout();
-  clearSelection();
-  renderAll();
-  scheduleSave();
-});
-
-selTheme.addEventListener('change', () => {
-  config.theme = selTheme.value;
-  applyTheme();
-  scheduleSave();
-});
-
-inAccent.addEventListener('input', () => {
-  config.accent = inAccent.value;
-  applyTheme();
-  scheduleSave();
-});
+/* Window controls (guard for non-Electron environments) */
+$('#win-min').addEventListener('click', () => { try { dash.winMinimize?.(); } catch {} });
+$('#win-max').addEventListener('click', () => { try { dash.winMaximize?.(); } catch {} });
+$('#win-close').addEventListener('click', () => { try { dash.winClose?.(); } catch {} });
 
 window.addEventListener('keydown', (e) => {
   const typing = e.target.closest('input, textarea, select, [contenteditable="true"]');
@@ -967,6 +1059,47 @@ window.addEventListener('resize', (() => {
   };
 })());
 
+const SIDEBAR_ICON_MAP = {
+  home: ICONS.home,
+  documents: ICONS.folder,
+  downloads: ICONS.folder,
+  music: ICONS.folder,
+  pictures: ICONS.folder,
+  videos: ICONS.folder
+};
+
+async function buildSidebar() {
+  const list = $('#sidebar-list');
+  if (!list) return;
+  list.replaceChildren();
+  let dirs = [];
+  try { dirs = await dash.listDirs(); } catch {}
+  if (!Array.isArray(dirs) || !dirs.length) {
+    dirs = [
+      { key: 'home', name: 'Home', path: '' },
+      { key: 'documents', name: 'Documents', path: '' },
+      { key: 'downloads', name: 'Downloads', path: '' }
+    ];
+  }
+  for (const d of dirs) {
+    const btn = document.createElement('button');
+    btn.className = 'sidebar-item';
+    btn.type = 'button';
+    btn.title = d.path || d.name;
+    const ic = document.createElement('span');
+    ic.className = 'side-icon';
+    ic.innerHTML = SIDEBAR_ICON_MAP[d.key] || ICONS.folder;
+    const nm = document.createElement('span');
+    nm.className = 'side-name';
+    nm.textContent = d.name;
+    btn.append(ic, nm);
+    btn.addEventListener('click', () => {
+      if (d.path) { try { dash.openPath?.(d.path); } catch {} }
+    });
+    list.appendChild(btn);
+  }
+}
+
 async function boot() {
   const dl = document.createElement('datalist');
   dl.id = 'global-tzlist';
@@ -1012,12 +1145,19 @@ async function boot() {
   }
 
   applyTheme();
-  applyDesktopBtn();
+  updatePreviewHint();
   applyDesktopStyles();
   normalizeLayout();
   renderAll();
   setEditing(true);
   loadWallpaper();
+  buildSidebar();
+
+  btnSettings.innerHTML = ICONS.gear;
+  const dc = $('#btn-drawer-close');
+  if (dc) dc.innerHTML = ICONS.x;
+  const mc = $('#btn-modal-close');
+  if (mc) mc.innerHTML = ICONS.x;
 }
 
 boot();

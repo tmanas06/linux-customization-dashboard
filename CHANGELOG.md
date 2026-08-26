@@ -2,6 +2,120 @@
 
 All notable changes to the Linux Dashboard project, newest first.
 
+## 3.0 — Glassmorphic UI redesign
+
+Complete visual overhaul while preserving the full customization engine.
+
+### Layout architecture
+- **Viewport fix**: Dashboard content now lives inside a clearly defined canvas
+  region (header → canvas + sidebar) so widgets can never be positioned behind
+  the header or sidebar.
+- **Three-region layout**: Header (52 px), Dashboard Canvas (scrollable), and a
+  fixed right-side Sidebar for desktop folder shortcuts.
+- Grid guides appear as subtle dashed lines only in Edit Mode; invisible in
+  Preview Mode.
+
+### Application header
+- Modern compact header with brand (icon + "Dashboard" / "Customize your desktop").
+- Segmented **Edit Mode / Preview Mode** switch (replaces the single toggle).
+- Actions always visible: **+ Add Widget**, **Save Layout**, **Settings** (gear).
+- Native Linux window controls (minimize, maximize, close).
+
+### Right sidebar
+- Desktop shortcut tiles for Home, Documents, Downloads, Music, Pictures, Videos
+  (only directories that exist on the machine).
+- Opens folders in the system file manager via `shell.openPath`.
+
+### Settings modal
+- Unified modal replacing the old inline theme/accent/desktop controls.
+- **Appearance**: Theme selector + accent color picker (live preview on change).
+- **Desktop Widgets**: enabled toggle, columns, margin, opacity, row height.
+- **Layout**: Reset button with confirmation.
+
+### Widget card redesign
+- Glassmorphic cards: translucent backdrop-filter blur, soft borders, rounded
+  corners, subtle hover glow/lift animation.
+- **Drag handle** (`⠿` grip icon) visible in Edit Mode at the start of each
+  widget header.
+- Lock / Settings / Delete icon buttons restyled as transparent icon buttons
+  that appear on hover in Preview Mode and always in Edit Mode.
+- **Delete** now uses a trash icon (🗑).
+
+### Digital Clock
+- Premium monospace typography, accent-colored seconds, subtle date line.
+
+### Analog Clock
+- Dark radial face gradient, thin tick marks, glow on second hand and center
+  dot, minimal numbers (12/3/6/9 only).
+
+### System Monitor
+- **CPU sparkline**: live canvas bar chart showing the last ~48 samples with
+  rounded bars and per-bar opacity scaling.
+- **Memory bar**: segmented fill that turns amber (>75%) or red (>90%).
+- Footer with hostname + uptime.
+
+### To-do List
+- Custom circular checkboxes (accent fill + check mark).
+- **Priority cycling**: hover reveals a flag button; cycles none → low →
+  medium → high → none. Color-coded sub-labels (green / amber / red).
+- Modern add-row with accent `+` button.
+
+### Sticky Notes
+- Warm translucent surface with subtle gold accent border and
+  `focus-within` glow.
+
+### Calendar
+- Today cell rendered as a circular accent indicator (border-radius: 50%).
+- Day-of-week labels uppercased, clean typography.
+
+### World Clock
+- Globe watermark in the top-right corner (low-opacity SVG).
+- Rows with subtle bottom borders and hover highlight.
+
+### Edit mode visual feedback
+- Grid guide lines (CSS repeating-linear-gradient, computed from actual column
+  and row dimensions).
+- Drop placeholder with pulsing animation.
+- Selected widget gets accent outline glow.
+- FLIP animation on widget snap (0.2 s ease with slight overshoot).
+
+### Animations
+- Widget hover: subtle `translate: 0 -2px` lift + stronger shadow (Preview
+  Mode only; Edit Mode keeps cursor grab).
+- Dragging: accent border + brightness(1.04) + elevated shadow.
+- Button hover: subtle glow background transition.
+- Modal: scale-fade pop-in. Drawer: slide-from-right. Toast: slide-up.
+- Respects `prefers-reduced-motion`.
+
+### Color system
+- Primary accent: `#4da3ff` (electric blue).
+- Secondary: `#a78bfa` (purple), success: `#34d399`, warning: `#fbbf24`,
+  danger: `#f87171`.
+- Theme-aware glass tokens for all four themes (Dark, Midnight, Nord, Light).
+
+### Responsive behavior
+- Sidebar collapses to 140 px at ≤1180 px, icon-only rail (56 px) at ≤1000 px,
+  hidden at ≤820 px.
+- Mode-switch labels and button text hide progressively at narrow widths.
+- Dashboard canvas is its own scroll container so widgets stay within bounds.
+
+### Window controls IPC
+- New preload APIs: `winMinimize()`, `winMaximize()`, `winClose()`.
+- New main-process IPC: `win:minimize`, `win:maximize`, `win:close`.
+
+### Sidebar IPC
+- New preload APIs: `listDirs()`, `openPath()`.
+- New main-process IPC: `sys:dirs` (returns existing XDG directories),
+  `fs:openPath` (opens folder in system file manager, restricted to user
+  home and /media /mnt).
+
+### Fixes
+- Widgets can no longer be dragged behind the header or sidebar.
+- The dashboard canvas dimensions are now used for column calculation instead
+  of `window.innerWidth`.
+- Grid guide CSS variables are recomputed on resize.
+- `addItem` scrolls the canvas container instead of the window.
+
 ## 2.0 — Grid layout engine & real drag-and-drop
 
 The headline release: the dashboard became a true desktop-layout editor.

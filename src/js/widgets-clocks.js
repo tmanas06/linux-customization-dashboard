@@ -88,38 +88,58 @@ export const clockWidgets = {
 
         const cx = size / 2;
         const cy = size / 2;
-        const r = size / 2 - 4;
+        const r = size / 2 - 6;
         const text = cssVar('--text', '#fff');
         const muted = cssVar('--muted', '#888');
         const accent = cssVar('--accent', '#4da3ff');
 
+        /* Dark face background */
+        const faceGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        faceGrad.addColorStop(0, 'rgba(20,24,34,.25)');
+        faceGrad.addColorStop(0.7, 'rgba(12,16,24,.12)');
+        faceGrad.addColorStop(1, 'rgba(12,16,24,.04)');
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.strokeStyle = muted;
-        ctx.lineWidth = 2;
+        ctx.fillStyle = faceGrad;
+        ctx.fill();
+
+        /* Outer ring */
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,255,255,.08)';
+        ctx.lineWidth = 1.5;
         ctx.stroke();
 
+        /* Tick marks */
         for (let i = 0; i < 60; i++) {
           const major = i % 5 === 0;
           const a = (i / 60) * Math.PI * 2 - Math.PI / 2;
-          const outer = r - 6;
-          const inner = r - (major ? 14 : 9);
+          const outer = r - 5;
+          const inner = r - (major ? 14 : 8);
           ctx.beginPath();
           ctx.moveTo(cx + Math.cos(a) * outer, cy + Math.sin(a) * outer);
           ctx.lineTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
           ctx.strokeStyle = major ? text : muted;
-          ctx.globalAlpha = major ? 0.9 : 0.35;
-          ctx.lineWidth = major ? 2.4 : 1.2;
+          ctx.globalAlpha = major ? 0.8 : 0.2;
+          ctx.lineWidth = major ? 1.8 : 0.8;
+          ctx.lineCap = 'round';
           ctx.stroke();
           ctx.globalAlpha = 1;
 
+          /* Minimal numbers (12, 3, 6, 9) */
           if (major && st.numbers) {
-            const num = i === 0 ? 12 : i / 5;
-            ctx.fillStyle = text;
-            ctx.font = `600 ${Math.max(10, r * 0.13)}px system-ui, sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(String(num), cx + Math.cos(a) * (r - 26), cy + Math.sin(a) * (r - 26));
+            const hourIdx = i === 0 ? 12 : i / 5;
+            if ([12, 3, 6, 9].includes(hourIdx)) {
+              ctx.fillStyle = muted;
+              ctx.font = `600 ${Math.max(10, r * 0.12)}px system-ui, sans-serif`;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(
+                String(hourIdx),
+                cx + Math.cos(a) * (r - 24),
+                cy + Math.sin(a) * (r - 24)
+              );
+            }
           }
         }
 
@@ -128,23 +148,42 @@ export const clockWidgets = {
         const minA = ((t.m + t.s / 60) / 60) * Math.PI * 2 - Math.PI / 2;
         const hourA = (((t.h % 12) + t.m / 60) / 12) * Math.PI * 2 - Math.PI / 2;
 
-        const hand = (angle, len, width, color) => {
+        /* Glow helper */
+        const glowHand = (angle, len, width, color, glow) => {
+          if (glow) {
+            ctx.shadowColor = glow;
+            ctx.shadowBlur = 8;
+          }
           ctx.beginPath();
-          ctx.moveTo(cx - Math.cos(angle) * len * 0.15, cy - Math.sin(angle) * len * 0.15);
+          ctx.moveTo(cx - Math.cos(angle) * len * 0.12, cy - Math.sin(angle) * len * 0.12);
           ctx.lineTo(cx + Math.cos(angle) * len, cy + Math.sin(angle) * len);
           ctx.strokeStyle = color;
           ctx.lineCap = 'round';
           ctx.lineWidth = width;
           ctx.stroke();
+          ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
         };
 
-        hand(hourA, r * 0.48, Math.max(3.5, r * 0.05), text);
-        hand(minA, r * 0.7, Math.max(2.5, r * 0.035), text);
-        hand(secA, r * 0.82, Math.max(1.5, r * 0.02), accent);
+        /* Hour hand */
+        glowHand(hourA, r * 0.45, Math.max(3, r * 0.045), text, null);
+        /* Minute hand */
+        glowHand(minA, r * 0.68, Math.max(2, r * 0.03), text, null);
+        /* Second hand — accent with glow */
+        glowHand(secA, r * 0.78, Math.max(1.2, r * 0.016), accent, accent);
 
+        /* Center dot */
         ctx.beginPath();
-        ctx.arc(cx, cy, Math.max(3, r * 0.045), 0, Math.PI * 2);
+        ctx.arc(cx, cy, Math.max(3, r * 0.04), 0, Math.PI * 2);
         ctx.fillStyle = accent;
+        ctx.shadowColor = accent;
+        ctx.shadowBlur = 6;
+        ctx.fill();
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.max(1.5, r * 0.02), 0, Math.PI * 2);
+        ctx.fillStyle = '#000';
         ctx.fill();
       };
 
@@ -224,8 +263,16 @@ export const clockWidgets = {
       { key: 'zones', label: 'Timezones', type: 'zonelist' }
     ],
     mount(body, item) {
+      body.style.position = 'relative';
       const list = el('div', 'zone-list');
+
+      /* Globe watermark */
+      const globe = document.createElement('div');
+      globe.className = 'zone-globe';
+      globe.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+      body.appendChild(globe);
       body.appendChild(list);
+
       const rows = item.settings.zones.map((tz) => {
         const row = el('div', 'zone-row');
         row.appendChild(el('span', 'zone-city', cityOf(tz)));

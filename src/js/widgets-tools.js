@@ -30,7 +30,8 @@ export const toolWidgets = {
         const offset = this.defaults.startOfWeek === 'mon' ? 1 : 0;
         for (let i = 0; i < 7; i++) {
           const d = new Date(2023, 0, 1 + ((i + offset) % 7));
-          grid.appendChild(el('div', 'cal-dow', d.toLocaleDateString(undefined, { weekday: 'short' }).slice(0, 2)));
+          const dow = el('div', 'cal-dow', d.toLocaleDateString(undefined, { weekday: 'short' }).toUpperCase().slice(0, 2));
+          grid.appendChild(dow);
         }
 
         const firstDow = (new Date(vy, vm, 1).getDay() - offset + 7) % 7;
@@ -64,24 +65,86 @@ export const toolWidgets = {
     defaults: {},
     settings: [],
     mount(body, item, api) {
-      const mkRow = (name) => {
+      const cpuHist = [];
+
+      const mkCpuRow = () => {
         const row = el('div', 'sys-row');
-        const labels = el('div', 'sys-labels');
-        labels.appendChild(el('span', null, name));
+        const top = el('div', 'sys-top');
+        top.appendChild(el('span', null, 'CPU Usage'));
         const pct = el('b', null, '—');
-        labels.appendChild(pct);
+        top.appendChild(pct);
+        const spark = document.createElement('canvas');
+        spark.className = 'sys-spark';
+        row.append(top, spark);
+        body.appendChild(row);
+        return { pct, spark };
+      };
+
+      const mkMemRow = () => {
+        const row = el('div', 'sys-row');
+        const top = el('div', 'sys-top');
+        top.appendChild(el('span', null, 'Memory Usage'));
+        const pct = el('b', null, '—');
+        top.appendChild(pct);
         const bar = el('div', 'bar');
         const fill = el('i');
         bar.appendChild(fill);
-        row.append(labels, bar);
+        row.append(top, bar);
         body.appendChild(row);
         return { pct, fill };
       };
 
-      const cpu = mkRow('CPU');
-      const mem = mkRow('Memory');
+      const cpu = mkCpuRow();
+      const mem = mkMemRow();
       const foot = el('div', 'sys-foot');
       body.appendChild(foot);
+
+      const drawSpark = () => {
+        const cv = cpu.spark;
+        if (!cv || !cv.clientWidth) return;
+        const dpr = window.devicePixelRatio || 1;
+        const w = cv.clientWidth;
+        const h = cv.clientHeight || 34;
+        cv.width = w * dpr;
+        cv.height = h * dpr;
+        const ctx = cv.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, w, h);
+
+        if (cpuHist.length < 2) return;
+
+        const accent = cssVar('--accent', '#4da3ff');
+        const muted = cssVar('--muted', '#888');
+        const count = Math.min(cpuHist.length, 48);
+        const data = cpuHist.slice(-count);
+        const barW = Math.max(3, (w - (count - 1) * 2) / count);
+        const gap = 2;
+        const maxH = h - 4;
+        const startX = (w - count * (barW + gap)) / 2;
+
+        for (let i = 0; i < count; i++) {
+          const v = data[i] / 100;
+          const bh = Math.max(2, v * maxH);
+          const x = startX + i * (barW + gap);
+          const y = h - 2 - bh;
+          const alpha = 0.3 + 0.7 * (i / count);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = accent;
+          ctx.beginPath();
+          const radius = Math.min(barW / 2, 3);
+          ctx.moveTo(x + radius, y);
+          ctx.lineTo(x + barW - radius, y);
+          ctx.quadraticCurveTo(x + barW, y, x + barW, y + radius);
+          ctx.lineTo(x + barW, h - 2);
+          ctx.lineTo(x, h - 2);
+          ctx.lineTo(x, y + radius);
+          ctx.quadraticCurveTo(x, y, x + radius, y);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      };
+
+      const cssVar = (name, fallback) => getComputedStyle(document.body).getPropertyValue(name).trim() || fallback;
 
       const fmtUptime = (s) => {
         const d = Math.floor(s / 86400);
@@ -95,18 +158,33 @@ export const toolWidgets = {
           const s = await api.getStats();
           if (typeof s.cpuUsage === 'number') {
             cpu.pct.textContent = `${s.cpuUsage}%`;
-            cpu.fill.style.width = `${Math.max(2, s.cpuUsage)}%`;
+            cpuHist.push(s.cpuUsage);
+            if (cpuHist.length > 60) cpuHist.shift();
+            drawSpark();
           }
           const usedPct = ((s.memTotal - s.memFree) / s.memTotal) * 100;
           mem.pct.textContent = `${usedPct.toFixed(1)}%`;
           mem.fill.style.width = `${usedPct}%`;
+          const memBar = mem.fill.parentElement;
+          memBar.classList.toggle('warm', usedPct > 75 && usedPct <= 90);
+          memBar.classList.toggle('hot', usedPct > 90);
           foot.textContent = `${s.hostname} • up ${fmtUptime(s.uptime)}`;
         } catch {}
       };
 
       tick();
       const iv = setInterval(tick, 2000);
-      return () => clearInterval(iv);
+
+      let ro = null;
+      if (typeof ResizeObserver !== 'undefined') {
+        ro = new ResizeObserver(() => drawSpark());
+        ro.observe(cpu.spark);
+      }
+
+      return () => {
+        clearInterval(iv);
+        if (ro) ro.disconnect();
+      };
     }
   },
 
@@ -121,18 +199,25 @@ export const toolWidgets = {
       const addRow = el('div', 'todo-add');
       const input = el('input');
       input.type = 'text';
-      input.placeholder = 'Add a task…';
+      input.placeholder = 'Add a new task…';
       input.setAttribute('aria-label', 'New task');
-      const addBtn = el('button', 'btn', 'Add');
+      const addBtn = document.createElement('button');
+      addBtn.className = 'todo-add-btn';
       addBtn.type = 'button';
+      addBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
       addRow.append(input, addBtn);
       body.append(list, addRow);
+
+      const PRIORITY_ORDER = [undefined, 'low', 'medium', 'high'];
+      const PRIORITY_LABELS = { low: 'Low Priority', medium: 'Medium Priority', high: 'High Priority' };
 
       const renderItems = () => {
         list.replaceChildren();
         item.settings.items.forEach((task, idx) => {
           const li = el('li', 'todo-item' + (task.done ? ' done' : ''));
+
           const cb = el('input');
+          cb.className = 'todo-cb';
           cb.type = 'checkbox';
           cb.checked = task.done;
           cb.addEventListener('change', () => {
@@ -140,6 +225,8 @@ export const toolWidgets = {
             li.classList.toggle('done', task.done);
             api.save();
           });
+
+          const main = el('div', 'todo-main');
           const txt = el('span', 'todo-text', task.text);
           txt.title = 'Double-click to edit';
           txt.addEventListener('dblclick', () => {
@@ -150,10 +237,7 @@ export const toolWidgets = {
             txt.contentEditable = 'false';
             const val = txt.textContent.trim();
             if (val) {
-              if (val !== task.text) {
-                task.text = val;
-                api.save();
-              }
+              if (val !== task.text) { task.text = val; api.save(); }
             } else {
               item.settings.items.splice(idx, 1);
               renderItems();
@@ -161,18 +245,32 @@ export const toolWidgets = {
             }
           });
           txt.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              txt.blur();
-            }
+            if (e.key === 'Enter') { e.preventDefault(); txt.blur(); }
           });
+          main.appendChild(txt);
+
+          if (task.priority && PRIORITY_LABELS[task.priority]) {
+            const prio = el('span', `todo-prio prio-${task.priority}`, PRIORITY_LABELS[task.priority]);
+            main.appendChild(prio);
+          }
+
+          const flagBtn = iconButton(ICONS.flag, 'icon-btn todo-flag', 'Cycle priority');
+          flagBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const ci = PRIORITY_ORDER.indexOf(task.priority);
+            task.priority = PRIORITY_ORDER[(ci + 1) % PRIORITY_ORDER.length];
+            renderItems();
+            api.save();
+          });
+
           const del = iconButton(ICONS.x, 'icon-btn red todo-del', 'Remove task');
           del.addEventListener('click', () => {
             item.settings.items.splice(idx, 1);
             renderItems();
             api.save();
           });
-          li.append(cb, txt, del);
+
+          li.append(cb, main, flagBtn, del);
           list.appendChild(li);
         });
       };
@@ -205,6 +303,7 @@ export const toolWidgets = {
       { key: 'placeholder', label: 'Placeholder text', type: 'text' }
     ],
     mount(body, item, api) {
+      const surface = el('div', 'notes-surface');
       const ta = document.createElement('textarea');
       ta.className = 'notes';
       ta.spellcheck = false;
@@ -219,7 +318,8 @@ export const toolWidgets = {
           api.save();
         }, 400);
       });
-      body.appendChild(ta);
+      surface.appendChild(ta);
+      body.appendChild(surface);
     }
   },
 

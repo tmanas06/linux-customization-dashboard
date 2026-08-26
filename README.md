@@ -54,7 +54,7 @@ Useful controls:
 | `npm run extension:install` | Install the extension + enable desktop mode |
 | `npm run extension:enable` / `extension:disable` | Toggle the desktop rendering |
 | `npm run extension:uninstall` | Remove the extension |
-| **Desktop** button in the app | Configure desktop mode: columns, margin, panel opacity, row height |
+| **⚙ Settings** in the app | Configure desktop mode: columns, margin, panel opacity, row height |
 
 Notes about desktop mode:
 
@@ -106,20 +106,21 @@ your homescreen behind your windows.
 
 | Action | How |
 |---|---|
-| **Edit mode** | Always on when the app opens — drag, resize, configure right away. Click **Done** to preview, **Edit dashboard**/`Ctrl+E` to return |
-| **Save to desktop** | Click **Save** (or `Ctrl+S`) — pushes your layout to the desktop instantly with a confirmation. Changes also autosave ~0.3s after any edit |
-| Add a widget | Click **Add widget** and pick one from the library — it spawns in the first free grid slot |
+| **Edit mode** | Always on when the app opens — drag, resize, configure right away. Switch to **Preview Mode** via the segmented control in the header (or `Ctrl+E`) |
+| **Save to desktop** | Click **Save Layout** (or `Ctrl+S`) — pushes your layout to the desktop instantly with a confirmation. Changes also autosave ~0.3 s after any edit |
+| Add a widget | Click **+ Add Widget** and pick one from the library — it spawns in the first free grid slot |
 | Move a widget | **Drag it** — the widget follows your mouse and a dashed preview shows the exact target cells. Release to snap into place |
 | Resize a widget | Drag the **bottom-right corner handle** (or right/bottom edges) — snaps to the grid live |
 | Nudge a widget | Click to select it, then use **arrow keys** (moves one cell, collision-checked) |
 | Lock a widget | Click the **lock icon** in its header (or tick *Lock widget* in settings) — locked widgets can't be dragged/resized and block overlaps |
 | Configure a widget | Click the **gear icon** — settings, lock state, width/height |
-| Remove a widget | Click the **X icon** on the widget |
+| Remove a widget | Click the **trash icon** on the widget |
 | Cancel an action | **Esc** — cancels an active drag/resize, closes dialogs, clears selection |
-| Desktop mode | **Desktop** button — show/configure widgets on the real desktop |
-| Change theme | Top bar → **Theme** (Dark, Midnight, Nord, Light) |
-| Accent color | Top bar → **Accent** color picker |
-| Reset layout | **Reset** button restores the default dashboard |
+| Settings | **Gear icon** in the header — theme, accent color, desktop mode, reset |
+| Change theme | Header → **⚙ Settings** → Appearance section |
+| Accent color | Header → **⚙ Settings** → Appearance section |
+| Reset layout | **⚙ Settings** → Reset layout to defaults |
+| Desktop shortcuts | Right sidebar — click any folder to open it in your file manager |
 | Fullscreen | `F11` |
 
 ### The layout engine
@@ -201,7 +202,7 @@ Log out and back in, or run: `update-desktop-database ~/.local/share/application
 
 ```
 linux-dashboard/
-├── main.js                  Electron main process (window, IPC: config, stats, links, wallpaper)
+├── main.js                  Electron main process (window, IPC: config, stats, wallpaper, window controls, sidebar dirs)
 ├── preload.js               Secure bridge exposing window.dashboard to the UI
 ├── package.json             Scripts: start, install:app, extension:*, etc.
 ├── CHANGELOG.md             Full feature/implementation history
@@ -215,15 +216,15 @@ linux-dashboard/
 │   ├── install-extension.sh Desktop extension install / uninstall
 │   └── extension-toggle.js  Enable/disable via gsettings
 └── src/
-    ├── index.html           App shell (top bar, grid, drawer, modal)
-    ├── style.css            Themes (CSS variables), grid, editor handles, modals
+    ├── index.html           App shell (header, canvas viewport, sidebar, drawer, modal)
+    ├── style.css            Glassmorphic themes, layout regions, widget cards, responsive
     └── js/
-        ├── app.js           State, grid editor (drag/resize/lock), modals, persistence
+        ├── app.js           State, grid editor (drag/resize/lock), settings modal, sidebar, persistence
         ├── layout.js        Layout engine: placement, snapping, collisions, free slots
         ├── widgets.js       Widget registry (combines the two files below)
-        ├── widgets-clocks.js Analog / digital / world clock
-        ├── widgets-tools.js  Calendar, system monitor, to-do, notes, quick links
-        └── icons.js         Inline SVG icons
+        ├── widgets-clocks.js Analog / digital / world clock (redesigned faces)
+        ├── widgets-tools.js  Calendar, system monitor (sparkline), to-do (priorities), notes, quick links
+        └── icons.js         Inline SVG icons (grip, lock, gear, trash, globe, etc.)
 ```
 
 ### Adding your own widget
