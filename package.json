@@ -1,0 +1,22 @@
+{
+  "name": "linux-dashboard",
+  "productName": "Linux Dashboard",
+  "version": "1.0.0",
+  "description": "A customizable desktop dashboard for Linux with clocks, calendar, notes, todo, system stats and more.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron --no-sandbox .",
+    "start:sandboxed": "electron .",
+    "install:app": "bash scripts/install-desktop.sh install",
+    "install:autostart": "bash scripts/install-desktop.sh autostart",
+    "uninstall:app": "bash scripts/install-desktop.sh uninstall",
+    "extension:install": "bash scripts/install-extension.sh install",
+    "extension:uninstall": "bash scripts/install-extension.sh uninstall",
+    "extension:enable": "node scripts/extension-toggle.js enable",
+    "extension:disable": "node scripts/extension-toggle.js disable"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^44.0.0"
+  }
+}

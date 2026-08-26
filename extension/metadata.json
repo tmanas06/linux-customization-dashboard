@@ -1,0 +1,8 @@
+{
+  "uuid": "linux-dashboard@manas",
+  "name": "Linux Dashboard Widgets",
+  "description": "Renders your Linux Dashboard widgets (clocks, calendar, notes, to-do, system monitor) on the actual desktop. Configure everything from the Linux Dashboard app; changes appear live.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "stylesheet": "stylesheet.css",
+  "url": "https://example.com/local"
+}
