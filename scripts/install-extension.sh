@@ -60,7 +60,8 @@ seed_config() {
           { type: "calendar", w: 2, h: 2, settings: { startOfWeek: "sun" } },
           { type: "worldClock", w: 2, h: 2, settings: { zones: ["UTC", "America/New_York", "Asia/Tokyo"] } },
           { type: "todo", w: 2, h: 2, settings: { items: [] } },
-          { type: "notes", w: 2, h: 2, settings: { text: "", placeholder: "Write something…" } }
+          { type: "notes", w: 2, h: 2, settings: { text: "", placeholder: "Write something…" } },
+          { type: "quickLinks", w: 2, h: 2, settings: { links: [] } }
         ]
       };
       cfg.layout.forEach((it, i) => { it.id = "seed-" + i + "-" + Date.now().toString(36); });

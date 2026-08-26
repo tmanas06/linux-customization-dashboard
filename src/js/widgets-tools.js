@@ -326,7 +326,7 @@ export const toolWidgets = {
   quickLinks: {
     name: 'Quick Links',
     desc: 'Launcher buttons for your favorite sites',
-    defaultSize: { w: 2, h: 1 },
+    defaultSize: { w: 2, h: 2 },
     defaults: { links: [] },
     settings: [],
     mount(body, item, api) {

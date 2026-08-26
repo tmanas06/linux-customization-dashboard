@@ -262,25 +262,161 @@ export const clockWidgets = {
     settings: [
       { key: 'zones', label: 'Timezones', type: 'zonelist' }
     ],
-    mount(body, item) {
+    mount(body, item, api) {
       body.style.position = 'relative';
       const list = el('div', 'zone-list');
 
-      /* Globe watermark */
       const globe = document.createElement('div');
       globe.className = 'zone-globe';
       globe.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
       body.appendChild(globe);
+
+      const tzSearchWrap = el('div', 'zone-search-wrap');
+      const tzSearch = el('input', 'zone-search');
+      tzSearch.type = 'text';
+      tzSearch.placeholder = 'Search timezone…';
+      tzSearch.setAttribute('aria-label', 'Search timezone');
+      const tzDropdown = el('div', 'zone-dropdown');
+      tzSearchWrap.append(tzSearch, tzDropdown);
+      body.appendChild(tzSearchWrap);
       body.appendChild(list);
 
-      const rows = item.settings.zones.map((tz) => {
-        const row = el('div', 'zone-row');
-        row.appendChild(el('span', 'zone-city', cityOf(tz)));
-        const time = el('span', 'zone-time');
-        row.appendChild(time);
-        list.appendChild(row);
-        return { tz, time };
+      let zones = [...(item.settings.zones || [])];
+      let rows = [];
+      let highlightedIdx = -1;
+
+      const popularZones = [
+        'UTC', 'America/New_York', 'America/Chicago', 'America/Denver',
+        'America/Los_Angeles', 'America/Anchorage', 'Pacific/Honolulu',
+        'America/Toronto', 'America/Vancouver', 'America/Sao_Paulo',
+        'America/Argentina/Buenos_Aires', 'America/Mexico_City',
+        'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Madrid',
+        'Europe/Rome', 'Europe/Amsterdam', 'Europe/Moscow', 'Europe/Istanbul',
+        'Europe/Athens', 'Europe/Warsaw', 'Europe/Stockholm', 'Europe/Zurich',
+        'Asia/Dubai', 'Asia/Kolkata', 'Asia/Kolkata', 'Asia/Bangkok',
+        'Asia/Singapore', 'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Seoul',
+        'Asia/Hong_Kong', 'Asia/Taipei', 'Asia/Jakarta', 'Asia/Karachi',
+        'Australia/Sydney', 'Australia/Melbourne', 'Australia/Brisbane',
+        'Australia/Perth', 'Australia/Adelaide', 'Pacific/Auckland',
+        'Pacific/Fiji', 'Africa/Cairo', 'Africa/Lagos', 'Africa/Johannesburg',
+        'Africa/Nairobi', 'Africa/Casablanca'
+      ];
+
+      const filterZones = (q) => {
+        const lower = q.toLowerCase();
+        const all = TIMEZONES.length ? TIMEZONES : popularZones;
+        const filtered = all.filter(tz =>
+          tz.toLowerCase().includes(lower) && !zones.includes(tz)
+        );
+        const popular = popularZones.filter(tz =>
+          tz.toLowerCase().includes(lower) && !zones.includes(tz)
+        );
+        const merged = [...new Set([...popular, ...filtered])];
+        return merged.slice(0, 20);
+      };
+
+      const renderDropdown = (query) => {
+        tzDropdown.replaceChildren();
+        highlightedIdx = -1;
+        if (!query && zones.length >= 12) {
+          tzDropdown.classList.remove('open');
+          return;
+        }
+        const matches = filterZones(query || '');
+        if (!matches.length) {
+          tzDropdown.classList.remove('open');
+          return;
+        }
+        matches.forEach((tz, i) => {
+          const opt = el('div', 'zone-option');
+          const city = el('span', 'zone-option-city', cityOf(tz));
+          const full = el('span', 'zone-option-tz', tz);
+          opt.append(city, full);
+          opt.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            addZone(tz);
+            tzSearch.value = '';
+            tzDropdown.classList.remove('open');
+          });
+          opt.addEventListener('mouseenter', () => {
+            highlightedIdx = i;
+            tzDropdown.querySelectorAll('.zone-option').forEach((n, j) =>
+              n.classList.toggle('highlighted', j === i)
+            );
+          });
+          tzDropdown.appendChild(opt);
+        });
+        tzDropdown.classList.add('open');
+      };
+
+      tzSearch.addEventListener('input', () => renderDropdown(tzSearch.value));
+      tzSearch.addEventListener('focus', () => renderDropdown(tzSearch.value));
+      tzSearch.addEventListener('keydown', (e) => {
+        const opts = tzDropdown.querySelectorAll('.zone-option');
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          highlightedIdx = Math.min(highlightedIdx + 1, opts.length - 1);
+          opts.forEach((n, i) => n.classList.toggle('highlighted', i === highlightedIdx));
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          highlightedIdx = Math.max(highlightedIdx - 1, 0);
+          opts.forEach((n, i) => n.classList.toggle('highlighted', i === highlightedIdx));
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (highlightedIdx >= 0 && opts[highlightedIdx]) {
+            opts[highlightedIdx].dispatchEvent(new Event('mousedown'));
+          }
+        } else if (e.key === 'Escape') {
+          tzSearch.blur();
+          tzDropdown.classList.remove('open');
+        }
       });
+      tzSearch.addEventListener('blur', () => {
+        setTimeout(() => tzDropdown.classList.remove('open'), 150);
+      });
+
+      const addZone = (tz) => {
+        if (!tz || zones.includes(tz)) return;
+        zones.push(tz);
+        item.settings.zones = zones;
+        api.save();
+        renderRows();
+      };
+
+      const removeZone = (tz) => {
+        zones = zones.filter(z => z !== tz);
+        item.settings.zones = zones;
+        api.save();
+        renderRows();
+      };
+
+      const renderRows = () => {
+        list.replaceChildren();
+        rows = [];
+        zones.forEach((tz) => {
+          const row = el('div', 'zone-row');
+          const cityEl = el('span', 'zone-city', cityOf(tz));
+          const tzLabel = el('span', 'zone-tz-label', tz === 'system' ? 'Local' : tz.split('/').pop().replace(/_/g, ' '));
+          const time = el('span', 'zone-time');
+          row.append(cityEl, tzLabel, time);
+
+          if (api.isEditing()) {
+            const rmBtn = document.createElement('button');
+            rmBtn.className = 'zone-rm';
+            rmBtn.type = 'button';
+            rmBtn.title = 'Remove timezone';
+            rmBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+            rmBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              removeZone(tz);
+            });
+            row.appendChild(rmBtn);
+          }
+
+          list.appendChild(row);
+          rows.push({ tz, time });
+        });
+      };
 
       const update = () => {
         const now = new Date();
@@ -290,8 +426,9 @@ export const clockWidgets = {
         }
       };
 
+      renderRows();
       update();
-      const iv = setInterval(update, 5000);
+      const iv = setInterval(update, 2000);
       return () => clearInterval(iv);
     }
   }

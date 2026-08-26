@@ -809,5 +809,46 @@ const BUILDERS = {
       box.add_child(grid);
     }
     return box;
+  },
+
+  quickLinks(ext, item, w, h, pal, bgAlpha) {
+    const box = ext._frame('Quick Links', w, h, pal, bgAlpha);
+    const links = (item.settings && item.settings.links) || [];
+
+    if (links.length === 0) {
+      box.add_child(new St.Label({
+        text: 'No links — add them in the app',
+        style: `font-size: 12px; color: ${pal.muted}; padding: 4px 2px;`
+      }));
+      return box;
+    }
+
+    const flow = new St.Widget();
+    const flm = new Clutter.BoxLayout({
+      orientation: Clutter.Orientation.HORIZONTAL,
+      spacing: 8,
+    });
+    flow.set_layout_manager(flm);
+    flow.set_style('padding: 4px 0;');
+
+    for (const link of links) {
+      const chip = new St.BoxLayout({
+        style: `
+          background-color: ${rgbaStr(pal.accent, 0.12)};
+          border: 1px solid ${rgbaStr(pal.accent, 0.2)};
+          border-radius: 999px;
+          padding: 6px 14px;
+        `
+      });
+      const label = new St.Label({
+        text: link.label || link.url || '?',
+        style: `font-size: 12px; font-weight: 500; color: ${pal.text};`
+      });
+      chip.add_child(label);
+      flow.add_child(chip);
+    }
+
+    box.add_child(flow);
+    return box;
   }
 };

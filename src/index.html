@@ -3,8 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'" />
+        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'" />
   <title>Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body data-theme="dark">
@@ -46,6 +49,9 @@
         <button id="btn-save" class="btn primary" type="button" title="Save and push to your desktop (Ctrl+S)">
           <span class="btn-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
           <span class="label">Save Layout</span>
+        </button>
+        <button id="btn-refresh-wallpaper" class="icon-btn gear-btn" type="button" title="Refresh wallpaper">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
         </button>
         <button id="btn-settings" class="icon-btn gear-btn" type="button" title="Settings"></button>
         <span class="win-sep" aria-hidden="true"></span>
@@ -101,7 +107,10 @@
     </div>
   </div>
 
-  <div id="toast" role="status"></div>
+  <div id="toast" role="status">
+    <span class="toast-icon"></span>
+    <span class="toast-text"></span>
+  </div>
 
   <script type="module" src="js/app.js"></script>
 </body>

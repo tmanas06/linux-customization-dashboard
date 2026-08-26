@@ -70,7 +70,7 @@ function mkItem(type) {
 }
 
 function defaultLayout() {
-  const layout = ['digitalClock', 'analogClock', 'systemMonitor', 'calendar', 'worldClock', 'todo', 'notes'].map(mkItem);
+  const layout = ['digitalClock', 'analogClock', 'systemMonitor', 'calendar', 'worldClock', 'todo', 'notes', 'quickLinks'].map(mkItem);
   assignSlots(layout, 6);
   return layout;
 }
@@ -97,7 +97,11 @@ function saveNow() {
 }
 
 function showToast(msg) {
-  toast.textContent = msg;
+  const icon = toast.querySelector('.toast-icon');
+  const text = toast.querySelector('.toast-text');
+  if (icon) icon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+  if (text) text.textContent = msg;
+  else toast.textContent = msg;
   toast.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
@@ -149,9 +153,14 @@ function updateGuides() {
   grid.style.setProperty('--step-y', (rowH + gapY) + 'px');
 }
 
+let lastWallpaperPath = '';
+
 async function loadWallpaper() {
   try {
     const wp = await dash.getWallpaper();
+    const newPath = wp && wp.file ? wp.file : '';
+    if (newPath === lastWallpaperPath && document.body.classList.contains('has-wallpaper')) return;
+    lastWallpaperPath = newPath;
     if (wp && wp.dataUrl) {
       desktopBg.style.backgroundImage = `url("${wp.dataUrl}")`;
       document.body.classList.add('has-wallpaper');
@@ -997,6 +1006,11 @@ function openSettingsModal() {
 }
 
 $('#btn-settings').addEventListener('click', openSettingsModal);
+$('#btn-refresh-wallpaper').addEventListener('click', () => {
+  lastWallpaperPath = '';
+  loadWallpaper();
+});
+window.addEventListener('focus', () => { lastWallpaperPath = ''; loadWallpaper(); });
 
 $('#btn-modal-save').addEventListener('click', () => {
   if (modalCollector) modalCollector();
@@ -1160,6 +1174,13 @@ async function boot() {
     item.w = item.w || def.defaultSize.w;
     item.h = item.h || def.defaultSize.h;
     item.id = item.id || uid();
+  }
+
+  if (!config.layout.some(i => i.type === 'quickLinks')) {
+    const ql = mkItem('quickLinks');
+    config.layout.push(ql);
+    normalizeLayout();
+    scheduleSave();
   }
 
   applyTheme();
