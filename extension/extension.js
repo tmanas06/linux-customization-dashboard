@@ -18,17 +18,18 @@ const WIDGET_NAMES = {
   systemMonitor: 'System Monitor',
   todo: 'To-do List',
   notes: 'Sticky Notes',
-  quickLinks: 'Quick Links'
+  quickLinks: 'Quick Links',
+  shortcuts: 'Shortcuts'
 };
 
 const THEMES = {
   dark: {
-    bg: '#10131a', panel: '#171b24', panel2: '#1f2531',
+    bg: '#10131a', panel: '#151a24', panel2: '#1c2230',
     text: '#e8ecf3', muted: '#93a0b4', accent: '#4da3ff',
     border: 'rgba(255,255,255,0.08)'
   },
   midnight: {
-    bg: '#07080c', panel: '#0d0f16', panel2: '#141826',
+    bg: '#07080c', panel: '#0e121b', panel2: '#151c2b',
     text: '#e6e9f2', muted: '#7d879c', accent: '#7c5cff',
     border: 'rgba(255,255,255,0.07)'
   },
@@ -296,10 +297,12 @@ export default class LinuxDashboardExtension extends Extension {
     const pal = this._palette();
     const cols = clamp(desktop.cols || 6, 2, 8);
     const margin = desktop.margin ?? 40;
+    const padL = clamp(desktop.padL || 120, 0, 400);
+    const padR = clamp(desktop.padR || 200, 0, 600);
     const rowH = clamp(desktop.rowH || 100, 70, 200);
     const bgAlpha = clamp((desktop.opacity ?? 80) / 100, 0.1, 1);
 
-    const cellW = Math.floor((geo.width - margin * 2 - (cols - 1) * GAP) / cols);
+    const cellW = Math.floor((geo.width - padL - padR - (cols - 1) * GAP) / cols);
     if (cellW < 120) {
       log(`linux-dashboard: hidden (cellW ${cellW} too small for screen ${geo.width})`);
       this._root.visible = false;
@@ -311,7 +314,7 @@ export default class LinuxDashboardExtension extends Extension {
     this._lastDayKey = '';
 
     const panelH = Main.layoutManager.panelBox ? Main.layoutManager.panelBox.height : 32;
-    this._root.set_position(geo.x + margin, geo.y + panelH + margin);
+    this._root.set_position(geo.x + padL, geo.y + panelH + margin);
 
     let positioned;
     const allExplicit = layout.every((i) => Number.isInteger(i.x) && Number.isInteger(i.y));
@@ -381,14 +384,20 @@ export default class LinuxDashboardExtension extends Extension {
   _frame(title, w, h, pal, bgAlpha) {
     const box = new St.BoxLayout({
       vertical: true,
-      style: `background-color: ${rgbaStr(pal.panel, bgAlpha)}; border: 1px solid ${pal.border}; border-radius: 16px; padding: 10px 14px 12px;`
+      style: `
+        background-color: ${rgbaStr(pal.panel, bgAlpha * 0.55)};
+        border: 1px solid ${rgbaStr(pal.accent, 0.12)};
+        border-radius: 16px;
+        padding: 10px 14px 12px;
+        box-shadow: 0 8px 32px -8px rgba(0,0,0,0.45);
+      `
     });
     box.set_size(w, h);
     box.set_clip_to_allocation(true);
     if (title) {
       box.add_child(new St.Label({
         text: title.toUpperCase(),
-        style: `font-size: 10px; font-weight: 700; color: ${pal.muted};`
+        style: `font-size: 10px; font-weight: 700; color: ${pal.muted}; letter-spacing: 1px;`
       }));
     }
     return box;
@@ -410,7 +419,7 @@ const BUILDERS = {
     const box = ext._frame('Digital Clock', w, h, pal, bgAlpha);
 
     const timeLabel = new St.Label({
-      style: `font-size: 38px; font-weight: 700; font-family: 'DejaVu Sans Mono', monospace; color: ${pal.text};`
+      style: `font-size: 38px; font-weight: 700; font-family: 'DejaVu Sans Mono', monospace; color: ${pal.text}; text-shadow: 0 0 20px ${rgbaStr(pal.accent, 0.25)};`
     });
     const ampmLabel = new St.Label({
       style: `font-size: 14px; font-weight: 600; color: ${pal.muted}; margin-top: 20px; margin-left: 6px;`
@@ -467,14 +476,21 @@ const BUILDERS = {
       const cx = size / 2;
       const cy = size / 2;
       const r = size / 2 - 4;
-      const now = GLib.DateTime.new_now(tzObj);
+      const now = tzObj ? GLib.DateTime.new_now(tzObj) : GLib.DateTime.new_now_local();
       const hh = now.get_hour() % 12;
       const mm = now.get_minute();
       const ss = now.get_second();
 
       cr.setSourceRGBA(...mutedCol);
-      cr.setLineWidth(2);
+      cr.setLineWidth(1.5);
       cr.arc(cx, cy, r, 0, Math.PI * 2);
+      cr.stroke();
+
+      // Subtle inner glow
+      const glowCol = [...accentCol.slice(0, 3), 0.06];
+      cr.setSourceRGBA(...glowCol);
+      cr.setLineWidth(6);
+      cr.arc(cx, cy, r - 2, 0, Math.PI * 2);
       cr.stroke();
 
       for (let i = 0; i < 60; i++) {
@@ -539,7 +555,9 @@ const BUILDERS = {
     const rows = [];
 
     for (const zone of zones) {
-      const row = new St.BoxLayout({ style: 'padding: 4px 2px;' });
+      const row = new St.BoxLayout({
+        style: `padding: 5px 4px; border-bottom: 1px solid ${rgbaStr(pal.accent, 0.08)};`
+      });
       const city = zone.split('/').pop().replace(/_/g, ' ') || zone;
       const cityLabel = new St.Label({
         text: city,
@@ -586,7 +604,7 @@ const BUILDERS = {
 
     const cellWd = Math.floor(innerW / 7);
     const dayStyle = `font-size: 11px; color: ${pal.text};`;
-    const todayStyle = `font-size: 11px; font-weight: 700; color: #ffffff; background-color: ${pal.accent}; border-radius: 6px;`;
+    const todayStyle = `font-size: 11px; font-weight: 700; color: #ffffff; background-color: ${pal.accent}; border-radius: 8px; box-shadow: 0 0 10px ${rgbaStr(pal.accent, 0.35)};`;
 
     const build = (now) => {
       label.text = now.format('%B %Y');
@@ -656,11 +674,11 @@ const BUILDERS = {
       });
       labels.add_child(value);
       const bar = new St.Widget({
-        style: `background-color: ${pal.panel2}; border-radius: 4px;`
+        style: `background-color: ${rgbaStr(pal.panel2, 0.7)}; border-radius: 4px;`
       });
       bar.set_size(innerW, 8);
       const fill = new St.Widget({
-        style: `background-color: ${pal.accent}; border-radius: 4px;`
+        style: `background-color: ${pal.accent}; border-radius: 4px; box-shadow: 0 0 8px ${rgbaStr(pal.accent, 0.3)};`
       });
       fill.set_size(2, 8);
       bar.add_child(fill);
@@ -705,10 +723,9 @@ const BUILDERS = {
     for (const task of items.slice(0, 8)) {
       const row = wrapLabel(new St.Label({
         text: `${task.done ? '✓' : '○'}  ${task.text}`,
-        style: `font-size: 12px; color: ${pal.text}; padding: 3px 2px;`
+        style: `font-size: 12px; color: ${task.done ? pal.muted : pal.text}; padding: 3px 2px; ${task.done ? 'text-decoration: line-through;' : ''}`
       }));
       row.get_clutter_text().set_ellipsize(Pango.EllipsizeMode.END);
-      if (task.done) row.set_opacity(130);
       box.add_child(row);
     }
 
@@ -727,10 +744,70 @@ const BUILDERS = {
     const label = wrapLabel(new St.Label({
       text: text || '—',
       opacity: text ? 255 : 110,
-      style: `font-size: 12px; color: ${pal.text}; padding: 2px 0;`
+      style: `font-size: 13px; color: ${pal.text}; padding: 4px 2px; line-height: 1.5;`
     }));
     label.get_clutter_text().set_ellipsize(Pango.EllipsizeMode.NONE);
     box.add_child(label);
+    return box;
+  },
+
+  shortcuts(ext, item, w, h, pal, bgAlpha) {
+    const box = ext._frame('Shortcuts', w, h, pal, bgAlpha);
+    const items = (item.settings && item.settings.items) || [];
+
+    const grid = new St.Widget({
+      style: 'padding: 4px 0;'
+    });
+    const lm = new Clutter.GridLayout();
+    lm.set_column_spacing(8);
+    lm.set_row_spacing(8);
+    grid.set_layout_manager(lm);
+
+    const cols = clamp(Math.floor(w / 90), 2, 6);
+    items.forEach((sc, idx) => {
+      const col = idx % cols;
+      const row = Math.floor(idx / cols);
+
+      const btn = new St.BoxLayout({
+        vertical: true,
+        x_align: Clutter.ActorAlign.CENTER,
+        style: `
+          background-color: ${rgbaStr(pal.panel2, 0.6)};
+          border: 1px solid ${rgbaStr(pal.accent, 0.1)};
+          border-radius: 10px;
+          padding: 8px 4px 6px;
+          spacing: 4px;
+        `
+      });
+      btn.set_size(Math.floor((w - 28 - (cols - 1) * 8) / cols), 52);
+
+      const iconLabel = new St.Label({
+        text: sc.label ? sc.label.charAt(0).toUpperCase() : '?',
+        style: `font-size: 18px; font-weight: 700; color: ${pal.accent};`
+      });
+      iconLabel.set_x_align(Clutter.ActorAlign.CENTER);
+      btn.add_child(iconLabel);
+
+      const nameLabel = new St.Label({
+        text: sc.label || sc.path || '?',
+        style: `font-size: 9px; font-weight: 600; color: ${pal.muted};`
+      });
+      nameLabel.set_x_align(Clutter.ActorAlign.CENTER);
+      const ct = nameLabel.get_clutter_text();
+      ct.set_ellipsize(Pango.EllipsizeMode.END);
+      btn.add_child(nameLabel);
+
+      lm.attach(btn, col, row, 1, 1);
+    });
+
+    if (items.length === 0) {
+      box.add_child(new St.Label({
+        text: 'No shortcuts — add them in the app',
+        style: `font-size: 12px; color: ${pal.muted}; padding: 4px 2px;`
+      }));
+    } else {
+      box.add_child(grid);
+    }
     return box;
   }
 };

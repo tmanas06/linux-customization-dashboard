@@ -41,6 +41,7 @@ const api = {
   save: () => scheduleSave(),
   getStats: () => dash.getStats(),
   openExternal: (url) => dash.openExternal(url),
+  openPath: (p) => dash.openPath(p),
   remount: (item) => remountItem(item)
 };
 
@@ -119,11 +120,10 @@ function applyDesktopStyles() {
   cols = computeCols();
   grid.style.setProperty('--cols', cols);
   grid.style.setProperty('--rowh', `${clamp(Number(d.rowH) || 100, 70, 200)}px`);
-  const m = clamp(Number(d.margin ?? 40), 0, 300);
   const pt = 14;
-  const pl = Math.min(m, 60);
-  const pr = Math.min(m, 60);
-  const pb = Math.max(28, m);
+  const pl = clamp(Number(d.padL) || 120, 40, 400);
+  const pr = clamp(Number(d.padR) || 200, 40, 600);
+  const pb = Math.max(28, Number(d.margin) || 44);
   grid.style.padding = `${pt}px ${pr}px ${pb}px ${pl}px`;
   grid.style.setProperty('--pad-t', pt + 'px');
   grid.style.setProperty('--pad-l', pl + 'px');
@@ -850,7 +850,7 @@ function openSettings(item) {
 }
 
 function openSettingsModal() {
-  const d = { enabled: false, cols: 6, margin: 40, opacity: 80, rowH: 100, ...(config.desktop || {}) };
+  const d = { enabled: false, cols: 6, margin: 40, padL: 120, padR: 200, opacity: 80, rowH: 100, ...(config.desktop || {}) };
 
   const build = (container) => {
     /* --- Appearance --- */
@@ -958,6 +958,8 @@ function openSettingsModal() {
       secDesk.appendChild(wrap);
     };
     mkRange('Screen margin', 'margin', 0, 300, 10, 'px');
+    mkRange('Left padding (dock)', 'padL', 0, 400, 10, 'px');
+    mkRange('Right padding (icons)', 'padR', 0, 600, 10, 'px');
     mkRange('Panel opacity', 'opacity', 20, 100, 5, '%');
     mkRange('Row height', 'rowH', 70, 180, 5, 'px');
     container.appendChild(secDesk);

@@ -397,5 +397,120 @@ export const toolWidgets = {
       renderLinks();
       renderAddForm();
     }
+  },
+
+  shortcuts: {
+    name: 'Shortcuts',
+    desc: 'Quick-launch apps, folders, and files',
+    defaultSize: { w: 2, h: 2 },
+    defaults: {
+      items: [
+        { label: 'Home', path: '~', icon: 'home' },
+        { label: 'Documents', path: '~/Documents', icon: 'docs' },
+        { label: 'Downloads', path: '~/Downloads', icon: 'download' },
+        { label: 'Pictures', path: '~/Pictures', icon: 'image' },
+        { label: 'Music', path: '~/Music', icon: 'music' },
+        { label: 'Videos', path: '~/Videos', icon: 'monitor' },
+        { label: 'Terminal', path: 'terminal', icon: 'terminal' }
+      ]
+    },
+    settings: [],
+    mount(body, item, api) {
+      const grid = el('div', 'sc-grid');
+      body.appendChild(grid);
+
+      const iconChoices = ['home','folder','docs','download','image','music','monitor','terminal','file','globe','flag'];
+
+      const iconSvg = (name) => ICONS[name] || ICONS.file;
+
+      const render = () => {
+        grid.replaceChildren();
+        item.settings.items.forEach((sc, idx) => {
+          const btn = el('button', 'sc-item');
+          btn.type = 'button';
+          btn.title = sc.path;
+
+          const ic = el('span', 'sc-icon');
+          ic.innerHTML = iconSvg(sc.icon);
+          const lb = el('span', 'sc-label', sc.label || sc.path.split('/').pop() || sc.path);
+          btn.append(ic, lb);
+
+          btn.addEventListener('click', () => {
+            if (sc.path === 'terminal') {
+              api.openExternal('x-terminal-emulator');
+            } else if (/^https?:\/\//i.test(sc.path)) {
+              api.openExternal(sc.path);
+            } else {
+              api.openPath(sc.path);
+            }
+          });
+
+          if (api.isEditing()) {
+            const rm = el('button', 'sc-rm');
+            rm.type = 'button';
+            rm.innerHTML = ICONS.x;
+            rm.title = 'Remove shortcut';
+            rm.addEventListener('click', (e) => {
+              e.stopPropagation();
+              item.settings.items.splice(idx, 1);
+              api.save();
+              render();
+              renderForm();
+            });
+            btn.appendChild(rm);
+          }
+
+          grid.appendChild(btn);
+        });
+      };
+
+      let form = null;
+      const renderForm = () => {
+        if (form) { form.remove(); form = null; }
+        if (!api.isEditing()) return;
+
+        form = el('div', 'sc-form');
+
+        const labelIn = el('input', 'sc-input');
+        labelIn.type = 'text';
+        labelIn.placeholder = 'Label';
+
+        const pathIn = el('input', 'sc-input');
+        pathIn.type = 'text';
+        pathIn.placeholder = '~/Documents or https://...';
+
+        const iconSel = el('select', 'sc-select');
+        iconChoices.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c;
+          opt.textContent = c.charAt(0).toUpperCase() + c.slice(1);
+          iconSel.appendChild(opt);
+        });
+
+        const addBtn = el('button', 'btn sc-add-btn');
+        addBtn.type = 'button';
+        addBtn.textContent = 'Add';
+        addBtn.addEventListener('click', () => {
+          const p = pathIn.value.trim();
+          if (!p) return;
+          item.settings.items.push({
+            label: labelIn.value.trim() || p.split('/').pop() || p,
+            path: p,
+            icon: iconSel.value
+          });
+          api.save();
+          labelIn.value = '';
+          pathIn.value = '';
+          render();
+          renderForm();
+        });
+
+        form.append(labelIn, pathIn, iconSel, addBtn);
+        body.appendChild(form);
+      };
+
+      render();
+      renderForm();
+    }
   }
 };
