@@ -42,6 +42,10 @@ const api = {
   getStats: () => dash.getStats(),
   openExternal: (url) => dash.openExternal(url),
   openPath: (p) => dash.openPath(p),
+  readProc: (path) => dash.readProc(path),
+  getNetStats: () => dash.getNetStats(),
+  getDiskStats: () => dash.getDiskStats(),
+  getCpuTemp: () => dash.getCpuTemp(),
   remount: (item) => remountItem(item)
 };
 
@@ -80,7 +84,18 @@ function defaultConfig() {
     version: 1,
     theme: 'dark',
     accent: '',
-    desktop: { enabled: false, cols: 6, margin: 40, opacity: 80, rowH: 100 },
+    accent2: '',
+    accentGradient: '',
+    fontScale: 1,
+    borderRadius: 'medium',
+    glassIntensity: 'medium',
+    animations: true,
+    reducedMotion: false,
+    animSpeed: 1,
+    animEntrance: true,
+    animHover: true,
+    desktop: { enabled: false, cols: 6, margin: 40, opacity: 80, rowH: 100, padL: 120, padR: 200, gap: 16, gridColor: '#88aaff', gridOpacity: 0.05, gridStyle: 'dashed' },
+    background: { type: 'wallpaper', opacity: 50, blur: 0, customColor: '#1a1a2e', customGradient: '' },
     layout: defaultLayout()
   };
 }
@@ -109,7 +124,32 @@ function showToast(msg) {
 
 function applyTheme() {
   document.body.dataset.theme = config.theme || 'dark';
-  document.documentElement.style.setProperty('--accent', config.accent || '');
+  document.documentElement.style.setProperty('--accent', config.accent || '#4da3ff');
+  document.documentElement.style.setProperty('--accent2', config.accent2 || '#a78bfa');
+  if (config.accentGradient) {
+    document.documentElement.style.setProperty('--accent-gradient', config.accentGradient);
+  } else {
+    document.documentElement.style.setProperty('--accent-gradient', `linear-gradient(135deg, ${config.accent || '#4da3ff'}, ${config.accent2 || '#a78bfa'})`);
+  }
+  document.documentElement.style.setProperty('--font-scale', config.fontScale || 1);
+  document.documentElement.style.setProperty('--glass-intensity', config.glassIntensity === 'high' ? '0.8' : config.glassIntensity === 'low' ? '0.3' : '0.55');
+  const radiusMap = { small: '10px', medium: '18px', large: '26px', full: '999px' };
+  document.documentElement.style.setProperty('--radius', radiusMap[config.borderRadius] || '18px');
+  document.documentElement.style.setProperty('--radius-sm', radiusMap[config.borderRadius] === '999px' ? '999px' : `calc(${radiusMap[config.borderRadius] || '18px'} * 0.67)`);
+  document.documentElement.style.setProperty('--radius-xs', radiusMap[config.borderRadius] === '999px' ? '999px' : `calc(${radiusMap[config.borderRadius] || '18px'} * 0.44)`);
+  if (!config.animations || config.reducedMotion) {
+    document.documentElement.style.setProperty('--transition-fast', '0.01ms');
+    document.documentElement.style.setProperty('--transition-med', '0.01ms');
+    document.documentElement.style.setProperty('--transition-spring', '0.01ms');
+  } else {
+    const speed = config.animSpeed || 1;
+    document.documentElement.style.setProperty('--transition-fast', `${0.15 / speed}s`);
+    document.documentElement.style.setProperty('--transition-med', `${0.25 / speed}s`);
+    document.documentElement.style.setProperty('--transition-spring', `${0.35 / speed}s`);
+  }
+  document.body.classList.toggle('no-entrance', config.animEntrance === false);
+  document.body.classList.toggle('no-hover', config.animHover === false);
+  applyBackground();
 }
 
 function computeCols() {
@@ -124,6 +164,10 @@ function applyDesktopStyles() {
   cols = computeCols();
   grid.style.setProperty('--cols', cols);
   grid.style.setProperty('--rowh', `${clamp(Number(d.rowH) || 100, 70, 200)}px`);
+  grid.style.setProperty('--gap', `${clamp(Number(d.gap) || 16, 4, 48)}px`);
+  grid.style.setProperty('--grid-guide-color', d.gridColor || '#88aaff');
+  grid.style.setProperty('--grid-guide-opacity', d.gridOpacity || 0.05);
+  grid.style.setProperty('--grid-guide-style', d.gridStyle || 'dashed');
   const pt = 14;
   const pl = clamp(Number(d.padL) || 120, 40, 400);
   const pr = clamp(Number(d.padR) || 200, 40, 600);
@@ -144,8 +188,9 @@ function updateGuides() {
   const padR = parseFloat(cs.paddingRight) || 0;
   const padT = parseFloat(cs.paddingTop) || 0;
   const padB = parseFloat(cs.paddingBottom) || 0;
-  const gapX = parseFloat(cs.columnGap) || 14;
-  const gapY = parseFloat(cs.rowGap) || gapX;
+  const gap = parseFloat(cs.getPropertyValue('--gap')) || 16;
+  const gapX = gap;
+  const gapY = gap;
   const inner = Math.max(0, grid.clientWidth - padL - padR);
   const colW = (inner - (cols - 1) * gapX) / cols;
   const rowH = parseFloat(cs.gridAutoRows) || 100;
@@ -156,6 +201,11 @@ function updateGuides() {
 let lastWallpaperPath = '';
 
 async function loadWallpaper() {
+  const bg = config.background || { type: 'wallpaper' };
+  if (bg.type !== 'wallpaper') {
+    document.body.classList.remove('has-wallpaper');
+    return;
+  }
   try {
     const wp = await dash.getWallpaper();
     const newPath = wp && wp.file ? wp.file : '';
@@ -164,8 +214,41 @@ async function loadWallpaper() {
     if (wp && wp.dataUrl) {
       desktopBg.style.backgroundImage = `url("${wp.dataUrl}")`;
       document.body.classList.add('has-wallpaper');
+      document.body.classList.remove('has-custom-bg');
     }
   } catch {}
+}
+
+function applyBackground() {
+  const bg = config.background || { type: 'wallpaper', opacity: 50, blur: 0, customColor: '', customGradient: '' };
+  const desktopBg = $('#desktop-bg');
+  if (!desktopBg) return;
+
+  desktopBg.style.removeProperty('background-image');
+  desktopBg.style.removeProperty('background-color');
+  desktopBg.style.setProperty('--bg-opacity', bg.opacity / 100);
+  desktopBg.style.setProperty('--bg-blur', `${bg.blur}px`);
+
+  if (bg.type === 'wallpaper') {
+    // Wallpaper will be loaded by loadWallpaper()
+    document.body.classList.remove('has-custom-bg');
+  } else if (bg.type === 'color' && bg.customColor) {
+    desktopBg.style.backgroundColor = bg.customColor;
+    desktopBg.style.setProperty('opacity', bg.opacity / 100);
+    document.body.classList.add('has-custom-bg');
+    document.body.classList.remove('has-wallpaper');
+  } else if (bg.type === 'gradient' && bg.customGradient) {
+    desktopBg.style.backgroundImage = bg.customGradient;
+    desktopBg.style.setProperty('opacity', bg.opacity / 100);
+    document.body.classList.add('has-custom-bg');
+    document.body.classList.remove('has-wallpaper');
+  }
+
+  if (bg.blur > 0) {
+    desktopBg.style.backdropFilter = `blur(${bg.blur}px)`;
+  } else {
+    desktopBg.style.removeProperty('backdrop-filter');
+  }
 }
 
 function updatePreviewHint() {
@@ -221,6 +304,12 @@ function iconBtn(icon, cls, title) {
 function applyItemStyle(el, item) {
   el.style.gridColumn = `${item.x + 1} / span ${Math.min(item.w, cols)}`;
   el.style.gridRow = `${item.y + 1} / span ${item.h}`;
+  const s = item.settings || {};
+  if (s.opacity !== undefined) el.style.setProperty('--widget-opacity', s.opacity);
+  const radiusMap = { small: '10px', medium: '18px', large: '26px', full: '999px', none: '0px', default: 'var(--radius)' };
+  el.style.setProperty('--widget-radius', radiusMap[s.borderRadius] || 'var(--radius)');
+  el.style.setProperty('--widget-blur', s.blur === false ? '0px' : '20px');
+  if (s.shadow !== undefined) el.style.setProperty('--widget-shadow', s.shadow);
 }
 
 function syncPositions() {
@@ -332,6 +421,11 @@ function buildCard(item) {
     e.stopPropagation();
     openSettings(item);
   });
+  const dup = iconBtn(ICONS.copy, 'icon-btn', 'Duplicate widget (Ctrl+D)');
+  dup.addEventListener('click', (e) => {
+    e.stopPropagation();
+    duplicateWidget(item.id);
+  });
   const del = iconBtn(ICONS.trash, 'icon-btn red', 'Remove widget');
   del.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -344,7 +438,7 @@ function buildCard(item) {
     showEmptyHintIfNeeded();
     scheduleSave();
   });
-  actions.append(lock, gear, del);
+  actions.append(lock, gear, dup, del);
   head.appendChild(actions);
   card.appendChild(head);
 
@@ -371,8 +465,9 @@ function gridMetrics() {
   const cs = getComputedStyle(grid);
   const padL = parseFloat(cs.paddingLeft) || 0;
   const padT = parseFloat(cs.paddingTop) || 0;
-  const gapX = parseFloat(cs.columnGap) || 14;
-  const gapY = parseFloat(cs.rowGap) || gapX;
+  const gap = parseFloat(cs.getPropertyValue('--gap')) || 16;
+  const gapX = gap;
+  const gapY = gap;
   const padR = parseFloat(cs.paddingRight) || 0;
   const inner = Math.max(0, r.width - padL - padR);
   const colW = (inner - (cols - 1) * gapX) / cols;
@@ -621,6 +716,55 @@ function cancelResize() {
   resize = null;
 }
 
+function duplicateWidget(id) {
+  const item = config.layout.find((i) => i.id === id);
+  if (!item) return;
+  const def = WIDGETS[item.type];
+  const copy = {
+    ...item,
+    id: uid(),
+    x: null,
+    y: null,
+    settings: JSON.parse(JSON.stringify(item.settings))
+  };
+  config.layout.push(copy);
+  normalizeLayout();
+  renderAll();
+  selectItem(copy.id);
+  scheduleSave();
+  showToast(`${def.name} duplicated`);
+  requestAnimationFrame(() => {
+    canvasScroll.scrollTo({ top: canvasScroll.scrollHeight, behavior: 'smooth' });
+  });
+}
+
+function deleteSelectedWidget() {
+  const item = config.layout.find((i) => i.id === selectedId);
+  if (!item) return;
+  const def = WIDGETS[item.type];
+  if (!confirm(`Remove "${def.name}" from the dashboard?`)) return;
+  disposeItem(item.id);
+  cardBodies.delete(item.id);
+  config.layout = config.layout.filter((i) => i.id !== item.id);
+  if (selectedId === item.id) clearSelection();
+  showEmptyHintIfNeeded();
+  scheduleSave();
+  renderAll();
+}
+
+function getFocusableWidgets() {
+  return config.layout
+    .filter(i => !i.locked || i.id === selectedId)
+    .map(i => i.id);
+}
+
+function scrollToWidget(id) {
+  const el = grid.querySelector(`.widget[data-id="${id}"]`);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+  }
+}
+
 grid.addEventListener('pointerdown', (e) => {
   if (e.target === grid) clearSelection();
 });
@@ -859,7 +1003,8 @@ function openSettings(item) {
 }
 
 function openSettingsModal() {
-  const d = { enabled: false, cols: 6, margin: 40, padL: 120, padR: 200, opacity: 80, rowH: 100, ...(config.desktop || {}) };
+  const d = { enabled: false, cols: 6, margin: 40, padL: 120, padR: 200, opacity: 80, rowH: 100, gap: 16, ...(config.desktop || {}) };
+  const dBg = { type: 'wallpaper', opacity: 50, blur: 0, customColor: '#1a1a2e', customGradient: '', ...(config.background || {}) };
 
   const build = (container) => {
     /* --- Appearance --- */
@@ -887,12 +1032,133 @@ function openSettingsModal() {
     const accWrap = document.createElement('div');
     accWrap.className = 'field';
     const accLbl = document.createElement('label');
-    accLbl.textContent = 'Accent color';
+    accLbl.textContent = 'Primary accent';
     const accIn = document.createElement('input');
     accIn.type = 'color';
     accIn.value = config.accent || '#4da3ff';
     accWrap.append(accLbl, accIn);
     secApp.appendChild(accWrap);
+
+    const acc2Wrap = document.createElement('div');
+    acc2Wrap.className = 'field';
+    const acc2Lbl = document.createElement('label');
+    acc2Lbl.textContent = 'Secondary accent';
+    const acc2In = document.createElement('input');
+    acc2In.type = 'color';
+    acc2In.value = config.accent2 || '#a78bfa';
+    acc2Wrap.append(acc2Lbl, acc2In);
+    secApp.appendChild(acc2Wrap);
+
+    const fontWrap = document.createElement('div');
+    fontWrap.className = 'field';
+    const fontLbl = document.createElement('label');
+    fontLbl.textContent = 'UI scale';
+    const fontSel = document.createElement('select');
+    for (const [v, l] of [['0.85','Small (85%)'],['1','Default (100%)'],['1.15','Large (115%)'],['1.3','Extra Large (130%)']]) {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = l;
+      fontSel.appendChild(o);
+    }
+    fontSel.value = String(config.fontScale || 1);
+    fontWrap.append(fontLbl, fontSel);
+    secApp.appendChild(fontWrap);
+
+    const radiusWrap = document.createElement('div');
+    radiusWrap.className = 'field';
+    const radiusLbl = document.createElement('label');
+    radiusLbl.textContent = 'Border radius';
+    const radiusSel = document.createElement('select');
+    for (const [v, l] of [['small','Small (10px)'],['medium','Medium (18px)'],['large','Large (26px)'],['full','Pill (999px)']]) {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = l;
+      radiusSel.appendChild(o);
+    }
+    radiusSel.value = config.borderRadius || 'medium';
+    radiusWrap.append(radiusLbl, radiusSel);
+    secApp.appendChild(radiusWrap);
+
+    const glassWrap = document.createElement('div');
+    glassWrap.className = 'field';
+    const glassLbl = document.createElement('label');
+    glassLbl.textContent = 'Glass intensity';
+    const glassSel = document.createElement('select');
+    for (const [v, l] of [['low','Subtle'],['medium','Balanced'],['high','Prominent']]) {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = l;
+      glassSel.appendChild(o);
+    }
+    glassSel.value = config.glassIntensity || 'medium';
+    glassWrap.append(glassLbl, glassSel);
+    secApp.appendChild(glassWrap);
+
+    const animWrap = document.createElement('div');
+    animWrap.className = 'field field-check';
+    const animCb = document.createElement('input');
+    animCb.type = 'checkbox';
+    animCb.id = 'anim-enabled';
+    animCb.checked = config.animations !== false;
+    const animLbl = document.createElement('label');
+    animLbl.htmlFor = 'anim-enabled';
+    animLbl.textContent = 'Enable animations';
+    animWrap.append(animCb, animLbl);
+    secApp.appendChild(animWrap);
+
+    const animSpeedWrap = document.createElement('div');
+    animSpeedWrap.className = 'field';
+    animSpeedWrap.style.display = config.animations !== false ? 'block' : 'none';
+    const animSpeedLbl = document.createElement('label');
+    animSpeedLbl.textContent = 'Animation speed: ';
+    const animSpeedVal = document.createElement('span');
+    animSpeedVal.textContent = `${config.animSpeed || 1}x`;
+    animSpeedLbl.appendChild(animSpeedVal);
+    const animSpeedRange = document.createElement('input');
+    animSpeedRange.type = 'range';
+    animSpeedRange.min = '0.2';
+    animSpeedRange.max = '2';
+    animSpeedRange.step = '0.1';
+    animSpeedRange.value = config.animSpeed || '1';
+    animSpeedRange.style.width = '100%';
+    animSpeedRange.addEventListener('input', () => { animSpeedVal.textContent = `${animSpeedRange.value}x`; });
+    animSpeedWrap.append(animSpeedLbl, animSpeedRange);
+    secApp.appendChild(animSpeedWrap);
+
+    const entranceWrap = document.createElement('div');
+    entranceWrap.className = 'field field-check';
+    entranceWrap.style.display = config.animations !== false ? 'block' : 'none';
+    const entranceCb = document.createElement('input');
+    entranceCb.type = 'checkbox';
+    entranceCb.id = 'anim-entrance';
+    entranceCb.checked = config.animEntrance !== false;
+    const entranceLbl = document.createElement('label');
+    entranceLbl.htmlFor = 'anim-entrance';
+    entranceLbl.textContent = 'Widget entrance animation';
+    entranceWrap.append(entranceCb, entranceLbl);
+    secApp.appendChild(entranceWrap);
+
+    const hoverWrap = document.createElement('div');
+    hoverWrap.className = 'field field-check';
+    hoverWrap.style.display = config.animations !== false ? 'block' : 'none';
+    const hoverCb = document.createElement('input');
+    hoverCb.type = 'checkbox';
+    hoverCb.id = 'anim-hover';
+    hoverCb.checked = config.animHover !== false;
+    const hoverLbl = document.createElement('label');
+    hoverLbl.htmlFor = 'anim-hover';
+    hoverLbl.textContent = 'Hover lift effect';
+    hoverWrap.append(hoverCb, hoverLbl);
+    secApp.appendChild(hoverWrap);
+
+    const motionWrap = document.createElement('div');
+    motionWrap.className = 'field field-check';
+    const motionCb = document.createElement('input');
+    motionCb.type = 'checkbox';
+    motionCb.id = 'motion-reduced';
+    motionCb.checked = !!config.reducedMotion;
+    const motionLbl = document.createElement('label');
+    motionLbl.htmlFor = 'motion-reduced';
+    motionLbl.textContent = 'Respect reduced motion (system preference)';
+    motionWrap.append(motionCb, motionLbl);
+    secApp.appendChild(motionWrap);
 
     themeSel.addEventListener('change', () => {
       config.theme = themeSel.value;
@@ -901,6 +1167,54 @@ function openSettingsModal() {
     });
     accIn.addEventListener('input', () => {
       config.accent = accIn.value;
+      applyTheme();
+      scheduleSave();
+    });
+    acc2In.addEventListener('input', () => {
+      config.accent2 = acc2In.value;
+      applyTheme();
+      scheduleSave();
+    });
+    fontSel.addEventListener('change', () => {
+      config.fontScale = Number(fontSel.value);
+      applyTheme();
+      scheduleSave();
+    });
+    radiusSel.addEventListener('change', () => {
+      config.borderRadius = radiusSel.value;
+      applyTheme();
+      scheduleSave();
+    });
+    glassSel.addEventListener('change', () => {
+      config.glassIntensity = glassSel.value;
+      applyTheme();
+      scheduleSave();
+    });
+    animCb.addEventListener('change', () => {
+      config.animations = animCb.checked;
+      applyTheme();
+      scheduleSave();
+      animSpeedWrap.style.display = animCb.checked ? 'block' : 'none';
+      entranceWrap.style.display = animCb.checked ? 'block' : 'none';
+      hoverWrap.style.display = animCb.checked ? 'block' : 'none';
+    });
+    animSpeedRange.addEventListener('input', () => {
+      config.animSpeed = Number(animSpeedRange.value);
+      applyTheme();
+      scheduleSave();
+    });
+    entranceCb.addEventListener('change', () => {
+      config.animEntrance = entranceCb.checked;
+      applyTheme();
+      scheduleSave();
+    });
+    hoverCb.addEventListener('change', () => {
+      config.animHover = hoverCb.checked;
+      applyTheme();
+      scheduleSave();
+    });
+    motionCb.addEventListener('change', () => {
+      config.reducedMotion = motionCb.checked;
       applyTheme();
       scheduleSave();
     });
@@ -971,7 +1285,376 @@ function openSettingsModal() {
     mkRange('Right padding (icons)', 'padR', 0, 600, 10, 'px');
     mkRange('Panel opacity', 'opacity', 20, 100, 5, '%');
     mkRange('Row height', 'rowH', 70, 180, 5, 'px');
+    mkRange('Widget gap', 'gap', 4, 48, 2, 'px');
+
+    const gridColorWrap = document.createElement('div');
+    gridColorWrap.className = 'field';
+    const gridColorLbl = document.createElement('label');
+    gridColorLbl.textContent = 'Grid line color';
+    const gridColorIn = document.createElement('input');
+    gridColorIn.type = 'color';
+    gridColorIn.value = d.gridColor || '#88aaff';
+    gridColorIn.dataset.deskkey = 'gridColor';
+    gridColorWrap.append(gridColorLbl, gridColorIn);
+    secDesk.appendChild(gridColorWrap);
+
+    const gridOpacityWrap = document.createElement('div');
+    gridOpacityWrap.className = 'field';
+    const gridOpacityLbl = document.createElement('label');
+    gridOpacityLbl.textContent = 'Grid line opacity: ';
+    const gridOpacityVal = document.createElement('span');
+    gridOpacityVal.textContent = `${Math.round((d.gridOpacity || 0.05) * 100)}%`;
+    gridOpacityLbl.appendChild(gridOpacityVal);
+    const gridOpacityRange = document.createElement('input');
+    gridOpacityRange.type = 'range'; gridOpacityRange.min = 0; gridOpacityRange.max = 1; gridOpacityRange.step = 0.01; gridOpacityRange.value = d.gridOpacity || 0.05;
+    gridOpacityRange.dataset.deskkey = 'gridOpacity';
+    gridOpacityRange.style.width = '100%';
+    gridOpacityRange.addEventListener('input', () => { gridOpacityVal.textContent = `${Math.round(gridOpacityRange.value * 100)}%`; });
+    gridOpacityWrap.append(gridOpacityLbl, gridOpacityRange);
+    secDesk.appendChild(gridOpacityWrap);
+
+    const gridStyleWrap = document.createElement('div');
+    gridStyleWrap.className = 'field';
+    const gridStyleLbl = document.createElement('label');
+    gridStyleLbl.textContent = 'Grid line style';
+    const gridStyleSel = document.createElement('select');
+    gridStyleSel.dataset.deskkey = 'gridStyle';
+    for (const [v, l] of [['dashed', 'Dashed'], ['dotted', 'Dotted'], ['solid', 'Solid']]) {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = l;
+      gridStyleSel.appendChild(o);
+    }
+    gridStyleSel.value = d.gridStyle || 'dashed';
+    gridStyleWrap.append(gridStyleLbl, gridStyleSel);
+    secDesk.appendChild(gridStyleWrap);
+
     container.appendChild(secDesk);
+
+    /* --- Background --- */
+    const secBg = document.createElement('div');
+    secBg.className = 'modal-section';
+    const titleBg = document.createElement('div');
+    titleBg.className = 'modal-section-title';
+    titleBg.textContent = 'Dashboard Background';
+    secBg.appendChild(titleBg);
+
+    const bgTypeWrap = document.createElement('div');
+    bgTypeWrap.className = 'field';
+    const bgTypeLbl = document.createElement('label');
+    bgTypeLbl.textContent = 'Background type';
+    const bgTypeSel = document.createElement('select');
+    for (const [v, l] of [['wallpaper', 'System wallpaper'], ['color', 'Solid color'], ['gradient', 'Custom gradient']]) {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = l;
+      bgTypeSel.appendChild(o);
+    }
+    bgTypeSel.value = dBg.type || 'wallpaper';
+    bgTypeWrap.append(bgTypeLbl, bgTypeSel);
+    secBg.appendChild(bgTypeWrap);
+
+    const customColorWrap = document.createElement('div');
+    customColorWrap.className = 'field';
+    customColorWrap.style.display = (dBg.type || 'wallpaper') === 'color' ? 'block' : 'none';
+    const customColorLbl = document.createElement('label');
+    customColorLbl.textContent = 'Background color';
+    const customColorIn = document.createElement('input');
+    customColorIn.type = 'color';
+    customColorIn.value = dBg.customColor || '#1a1a2e';
+    customColorWrap.append(customColorLbl, customColorIn);
+    secBg.appendChild(customColorWrap);
+
+    const customGradWrap = document.createElement('div');
+    customGradWrap.className = 'field';
+    customGradWrap.style.display = (dBg.type || 'wallpaper') === 'gradient' ? 'block' : 'none';
+    const customGradLbl = document.createElement('label');
+    customGradLbl.textContent = 'CSS Gradient (e.g. linear-gradient(135deg, #667eea 0%, #764ba2 100%))';
+    const customGradIn = document.createElement('input');
+    customGradIn.type = 'text';
+    customGradIn.placeholder = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+    customGradIn.value = dBg.customGradient || '';
+    customGradIn.style.width = '100%';
+    customGradWrap.append(customGradLbl, customGradIn);
+    secBg.appendChild(customGradWrap);
+
+    const bgOpacityWrap = document.createElement('div');
+    bgOpacityWrap.className = 'field';
+    const bgOpacityLbl = document.createElement('label');
+    bgOpacityLbl.textContent = 'Background opacity: ';
+    const bgOpacityVal = document.createElement('span');
+    bgOpacityVal.textContent = `${dBg.opacity || 50}%`;
+    bgOpacityLbl.appendChild(bgOpacityVal);
+    const bgOpacityRange = document.createElement('input');
+    bgOpacityRange.type = 'range'; bgOpacityRange.min = 0; bgOpacityRange.max = 100; bgOpacityRange.step = 5; bgOpacityRange.value = dBg.opacity || 50;
+    bgOpacityRange.style.width = '100%';
+    bgOpacityRange.addEventListener('input', () => { bgOpacityVal.textContent = `${bgOpacityRange.value}%`; });
+    bgOpacityWrap.append(bgOpacityLbl, bgOpacityRange);
+    secBg.appendChild(bgOpacityWrap);
+
+    const bgBlurWrap = document.createElement('div');
+    bgBlurWrap.className = 'field';
+    const bgBlurLbl = document.createElement('label');
+    bgBlurLbl.textContent = 'Background blur: ';
+    const bgBlurVal = document.createElement('span');
+    bgBlurVal.textContent = `${dBg.blur || 0}px`;
+    bgBlurLbl.appendChild(bgBlurVal);
+    const bgBlurRange = document.createElement('input');
+    bgBlurRange.type = 'range'; bgBlurRange.min = 0; bgBlurRange.max = 50; bgBlurRange.step = 1; bgBlurRange.value = dBg.blur || 0;
+    bgBlurRange.style.width = '100%';
+    bgBlurRange.addEventListener('input', () => { bgBlurVal.textContent = `${bgBlurRange.value}px`; });
+    bgBlurWrap.append(bgBlurLbl, bgBlurRange);
+    secBg.appendChild(bgBlurWrap);
+
+    container.appendChild(secBg);
+
+    bgTypeSel.addEventListener('change', () => {
+      customColorWrap.style.display = bgTypeSel.value === 'color' ? 'block' : 'none';
+      customGradWrap.style.display = bgTypeSel.value === 'gradient' ? 'block' : 'none';
+    });
+
+    /* --- Behavior --- */
+    const secBehavior = document.createElement('div');
+    secBehavior.className = 'modal-section';
+    const titleBehavior = document.createElement('div');
+    titleBehavior.className = 'modal-section-title';
+    titleBehavior.textContent = 'Behavior';
+    secBehavior.appendChild(titleBehavior);
+
+    const autosaveWrap = document.createElement('div');
+    autosaveWrap.className = 'field field-check';
+    const autosaveCb = document.createElement('input');
+    autosaveCb.type = 'checkbox';
+    autosaveCb.id = 'autosave-enabled';
+    autosaveCb.checked = true;
+    const autosaveLbl = document.createElement('label');
+    autosaveLbl.htmlFor = 'autosave-enabled';
+    autosaveLbl.textContent = 'Auto-save layout changes (300ms debounce)';
+    autosaveWrap.append(autosaveCb, autosaveLbl);
+    secBehavior.appendChild(autosaveWrap);
+
+    const snapWrap = document.createElement('div');
+    snapWrap.className = 'field field-check';
+    const snapCb = document.createElement('input');
+    snapCb.type = 'checkbox';
+    snapCb.id = 'snap-enabled';
+    snapCb.checked = true;
+    const snapLbl = document.createElement('label');
+    snapLbl.htmlFor = 'snap-enabled';
+    snapLbl.textContent = 'Snap widgets to grid';
+    snapWrap.append(snapCb, snapLbl);
+    secBehavior.appendChild(snapWrap);
+
+    container.appendChild(secBehavior);
+
+    /* --- Selected Widget Settings --- */
+    const secWidget = document.createElement('div');
+    secWidget.className = 'modal-section';
+    const titleWidget = document.createElement('div');
+    titleWidget.className = 'modal-section-title';
+    titleWidget.textContent = 'Selected Widget Settings';
+    secWidget.appendChild(titleWidget);
+
+    const widgetNote = document.createElement('p');
+    widgetNote.style.cssText = 'font-size:12px;color:var(--muted);margin:0 0 12px;';
+    widgetNote.textContent = 'Select a widget in the dashboard to edit its settings here.';
+    secWidget.appendChild(widgetNote);
+
+    const widgetSettingsContainer = document.createElement('div');
+    widgetSettingsContainer.id = 'widget-settings-container';
+    widgetSettingsContainer.style.minHeight = '100px';
+    secWidget.appendChild(widgetSettingsContainer);
+
+    container.appendChild(secWidget);
+
+    function updateWidgetSettingsPanel() {
+      widgetSettingsContainer.replaceChildren();
+      if (!selectedId) {
+        const hint = document.createElement('p');
+        hint.style.cssText = 'color:var(--muted);font-size:13px;padding:20px;text-align:center;';
+        hint.textContent = 'No widget selected. Click a widget in the dashboard to see its settings.';
+        widgetSettingsContainer.appendChild(hint);
+        return;
+      }
+      const item = config.layout.find(i => i.id === selectedId);
+      if (!item) return;
+      const def = WIDGETS[item.type];
+      const widgetTitle = document.createElement('h4');
+      widgetTitle.style.cssText = 'margin:0 0 12px;font-size:14px;font-weight:600;color:var(--text);';
+      widgetTitle.textContent = def.name;
+      widgetSettingsContainer.appendChild(widgetTitle);
+
+      for (const field of def.settings) {
+        const wrap = document.createElement('div');
+        wrap.className = 'field';
+        if (field.type === 'bool') {
+          wrap.classList.add('field-check');
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.checked = !!item.settings[field.key];
+          cb.dataset.key = field.key;
+          const lbl = document.createElement('label');
+          lbl.textContent = field.label;
+          wrap.append(cb, lbl);
+          widgetSettingsContainer.appendChild(wrap);
+          cb.addEventListener('change', () => {
+            item.settings[field.key] = cb.checked;
+            scheduleSave();
+            remountItem(item);
+          });
+        } else {
+          const lbl = document.createElement('label');
+          lbl.textContent = field.label;
+          wrap.appendChild(lbl);
+          let input;
+          if (field.type === 'select') {
+            input = document.createElement('select');
+            for (const opt of field.options) {
+              const o = document.createElement('option');
+              o.value = opt.v;
+              o.textContent = opt.l;
+              input.appendChild(o);
+            }
+            input.value = item.settings[field.key];
+          } else if (field.type === 'number') {
+            input = document.createElement('input');
+            input.type = 'number';
+            input.value = item.settings[field.key];
+          } else if (field.type === 'tz') {
+            input = document.createElement('input');
+            input.type = 'text';
+            input.setAttribute('list', 'global-tzlist');
+            input.placeholder = 'system';
+            input.value = item.settings[field.key] || 'system';
+          } else if (field.type === 'zonelist') {
+            continue; // Skip in panel, use widget's own settings
+          } else {
+            input = document.createElement('input');
+            input.type = 'text';
+            input.value = item.settings[field.key] ?? '';
+          }
+          input.dataset.key = field.key;
+          wrap.appendChild(input);
+          widgetSettingsContainer.appendChild(wrap);
+          input.addEventListener('change', () => {
+            if (input.type === 'checkbox') item.settings[field.key] = input.checked;
+            else if (input.type === 'number') item.settings[field.key] = Number(input.value);
+            else if (field.key === 'timezone') item.settings[field.key] = input.value.trim() || 'system';
+            else item.settings[field.key] = input.value;
+            scheduleSave();
+            remountItem(item);
+          });
+        }
+      }
+    }
+
+    // Update widget settings when selection changes
+    const origSelectItem = selectItem;
+    selectItem = (id) => {
+      origSelectItem(id);
+      updateWidgetSettingsPanel();
+    };
+
+    /* --- Layout Import/Export --- */
+    const secLayout = document.createElement('div');
+    secLayout.className = 'modal-section';
+    const titleLayout = document.createElement('div');
+    titleLayout.className = 'modal-section-title';
+    titleLayout.textContent = 'Layout Import/Export';
+    secLayout.appendChild(titleLayout);
+
+    const exportBtn = document.createElement('button');
+    exportBtn.className = 'btn';
+    exportBtn.type = 'button';
+    exportBtn.textContent = 'Export Layout';
+    exportBtn.style.marginRight = '8px';
+    exportBtn.addEventListener('click', () => {
+      const exportData = {
+        version: 1,
+        theme: config.theme,
+        accent: config.accent,
+        accent2: config.accent2,
+        accentGradient: config.accentGradient,
+        fontScale: config.fontScale,
+        borderRadius: config.borderRadius,
+        glassIntensity: config.glassIntensity,
+        animations: config.animations,
+        reducedMotion: config.reducedMotion,
+        animSpeed: config.animSpeed,
+        animEntrance: config.animEntrance,
+        animHover: config.animHover,
+        desktop: config.desktop,
+        background: config.background,
+        layout: config.layout
+      };
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `dashboard-layout-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Layout exported');
+    });
+    secLayout.appendChild(exportBtn);
+
+    const importLabel = document.createElement('label');
+    importLabel.style.display = 'inline-flex';
+    importLabel.style.alignItems = 'center';
+    importLabel.style.gap = '8px';
+    importLabel.style.cursor = 'pointer';
+    const importInput = document.createElement('input');
+    importInput.type = 'file';
+    importInput.accept = '.json';
+    importInput.style.display = 'none';
+    importInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const imported = JSON.parse(ev.target.result);
+          if (imported.layout && Array.isArray(imported.layout)) {
+            config.layout = imported.layout.filter(i => i && WIDGETS[i.type]);
+            if (imported.theme) config.theme = imported.theme;
+            if (imported.accent) config.accent = imported.accent;
+            if (imported.accent2) config.accent2 = imported.accent2;
+            if (imported.accentGradient) config.accentGradient = imported.accentGradient;
+            if (imported.fontScale) config.fontScale = imported.fontScale;
+            if (imported.borderRadius) config.borderRadius = imported.borderRadius;
+            if (imported.glassIntensity) config.glassIntensity = imported.glassIntensity;
+            if (imported.animations !== undefined) config.animations = imported.animations;
+            if (imported.reducedMotion !== undefined) config.reducedMotion = imported.reducedMotion;
+            if (imported.animSpeed) config.animSpeed = imported.animSpeed;
+            if (imported.animEntrance !== undefined) config.animEntrance = imported.animEntrance;
+            if (imported.animHover !== undefined) config.animHover = imported.animHover;
+            if (imported.desktop) config.desktop = { ...config.desktop, ...imported.desktop };
+            if (imported.background) config.background = { ...config.background, ...imported.background };
+            applyTheme();
+            applyDesktopStyles();
+            normalizeLayout();
+            renderAll();
+            scheduleSave();
+            showToast('Layout imported successfully');
+            closeModal();
+          } else {
+            showToast('Invalid layout file');
+          }
+        } catch {
+          showToast('Failed to import layout');
+        }
+        importInput.value = '';
+      };
+      reader.readAsText(file);
+    });
+    importInput.addEventListener('click', (e) => e.stopPropagation());
+    const importBtn = document.createElement('button');
+    importBtn.className = 'btn ghost';
+    importBtn.type = 'button';
+    importBtn.textContent = 'Import Layout';
+    importBtn.addEventListener('click', () => importInput.click());
+    importLabel.append(importBtn, importInput);
+    secLayout.appendChild(importLabel);
+
+    container.appendChild(secLayout);
 
     /* --- Reset --- */
     const secReset = document.createElement('div');
@@ -990,6 +1673,23 @@ function openSettingsModal() {
       showToast('Layout reset to defaults');
     });
     secReset.appendChild(resetBtn);
+
+    const resetAllBtn = document.createElement('button');
+    resetAllBtn.className = 'btn danger';
+    resetAllBtn.type = 'button';
+    resetAllBtn.style.marginTop = '8px';
+    resetAllBtn.textContent = 'Reset ALL settings (theme, layout, everything)';
+    resetAllBtn.addEventListener('click', () => {
+      if (!confirm('This will reset everything to defaults. Continue?')) return;
+      config = defaultConfig();
+      applyTheme();
+      applyDesktopStyles();
+      renderAll();
+      scheduleSave();
+      closeModal();
+      showToast('All settings reset to defaults');
+    });
+    secReset.appendChild(resetAllBtn);
     container.appendChild(secReset);
 
     return () => {
@@ -999,6 +1699,14 @@ function openSettingsModal() {
         next[el.dataset.deskkey] = Number(el.value);
       });
       config.desktop = next;
+
+      const nextBg = { ...dBg };
+      nextBg.type = bgTypeSel.value;
+      nextBg.opacity = Number(bgOpacityRange.value);
+      nextBg.blur = Number(bgBlurRange.value);
+      nextBg.customColor = customColorIn.value;
+      nextBg.customGradient = customGradIn.value.trim();
+      config.background = nextBg;
     };
   };
 
@@ -1050,6 +1758,20 @@ window.addEventListener('keydown', (e) => {
     saveNow();
     return;
   }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+    e.preventDefault();
+    if (editMode && selectedId) {
+      duplicateWidget(selectedId);
+    }
+    return;
+  }
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (!typing && editMode && selectedId) {
+      e.preventDefault();
+      deleteSelectedWidget();
+    }
+    return;
+  }
   if (e.key === 'Escape') {
     if (drag) return cancelDrag();
     if (resize) return cancelResize();
@@ -1061,19 +1783,65 @@ window.addEventListener('keydown', (e) => {
   if (editMode && selectedId && !typing && e.key.startsWith('Arrow')) {
     const item = config.layout.find((i) => i.id === selectedId);
     if (!item || item.locked) return;
-    const deltas = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-    const [dx, dy] = deltas[e.key] || [0, 0];
-    if (!dx && !dy) return;
-    e.preventDefault();
-    const nx = clamp(item.x + dx, 0, cols - item.w);
-    const ny = Math.max(0, item.y + dy);
-    if (nx === item.x && ny === item.y) return;
-    const sim = tryPlace(config.layout, item.id, nx, ny, item.w, item.h);
-    if (sim) {
-      applySim(sim);
-      syncPositions();
-      scheduleSave();
+    let handled = false;
+    if (!e.shiftKey) {
+      const deltas = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+      const [dx, dy] = deltas[e.key] || [0, 0];
+      if (!dx && !dy) return;
+      e.preventDefault();
+      const nx = clamp(item.x + dx, 0, cols - item.w);
+      const ny = Math.max(0, item.y + dy);
+      if (nx === item.x && ny === item.y) return;
+      const sim = tryPlace(config.layout, item.id, nx, ny, item.w, item.h);
+      if (sim) {
+        applySim(sim);
+        syncPositions();
+        scheduleSave();
+      }
+      handled = true;
+    } else {
+      const deltas = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+      const [dx, dy] = deltas[e.key] || [0, 0];
+      if (!dx && !dy) return;
+      e.preventDefault();
+      const nw = clamp(item.w + dx, 1, cols - item.x);
+      const nh = clamp(item.h + dy, 1, 6);
+      if (nw === item.w && nh === item.h) return;
+      const sim = tryPlace(config.layout, item.id, item.x, item.y, nw, nh);
+      if (sim) {
+        applySim(sim);
+        syncPositions();
+        scheduleSave();
+      }
+      handled = true;
     }
+    if (handled) return;
+  }
+  if (!typing && (e.key === 'Tab' || (e.shiftKey && e.key === 'Tab'))) {
+    e.preventDefault();
+    const focusable = getFocusableWidgets();
+    if (focusable.length === 0) return;
+    const currentIdx = selectedId ? focusable.findIndex(id => id === selectedId) : -1;
+    const nextIdx = e.shiftKey ? currentIdx - 1 : currentIdx + 1;
+    const nextId = focusable[(nextIdx + focusable.length) % focusable.length];
+    selectItem(nextId);
+    scrollToWidget(nextId);
+    return;
+  }
+  if (!typing && e.key === 'Enter' && editMode && selectedId) {
+    const item = config.layout.find((i) => i.id === selectedId);
+    if (item) openSettings(item);
+    return;
+  }
+  if (!typing && e.key === ' ' && editMode && selectedId) {
+    e.preventDefault();
+    const item = config.layout.find((i) => i.id === selectedId);
+    if (item) {
+      item.locked = !item.locked;
+      scheduleSave();
+      renderAll();
+    }
+    return;
   }
 });
 
@@ -1156,13 +1924,31 @@ async function boot() {
           version: 1,
           theme: loaded.theme || 'dark',
           accent: loaded.accent || '',
+          accent2: loaded.accent2 || '',
+          accentGradient: loaded.accentGradient || '',
+          fontScale: loaded.fontScale || 1,
+          borderRadius: loaded.borderRadius || 'medium',
+          glassIntensity: loaded.glassIntensity || 'medium',
+          animations: loaded.animations !== false,
+          reducedMotion: !!loaded.reducedMotion,
           desktop: {
             enabled: false,
             cols: 6,
             margin: 40,
             opacity: 80,
             rowH: 100,
+            padL: 120,
+            padR: 200,
+            gap: 16,
             ...(loaded.desktop || {})
+          },
+          background: {
+            type: 'wallpaper',
+            opacity: 50,
+            blur: 0,
+            customColor: '#1a1a2e',
+            customGradient: '',
+            ...(loaded.background || {})
           },
           layout: loaded.layout.filter((i) => i && WIDGETS[i.type])
         }

@@ -6,9 +6,13 @@ export const toolWidgets = {
     name: 'Calendar',
     desc: 'Month view with today highlighted',
     defaultSize: { w: 2, h: 2 },
-    defaults: { startOfWeek: 'sun' },
+    defaults: { startOfWeek: 'sun', opacity: 100, borderRadius: 'default', blur: true, shadow: 1 },
     settings: [
-      { key: 'startOfWeek', label: 'Week starts on', type: 'select', options: [{ v: 'sun', l: 'Sunday' }, { v: 'mon', l: 'Monday' }] }
+      { key: 'startOfWeek', label: 'Week starts on', type: 'select', options: [{ v: 'sun', l: 'Sunday' }, { v: 'mon', l: 'Monday' }] },
+      { key: 'opacity', label: 'Opacity', type: 'number' },
+      { key: 'borderRadius', label: 'Border radius', type: 'select', options: [{ v: 'default', l: 'Default' }, { v: 'small', l: 'Small (10px)' }, { v: 'medium', l: 'Medium (18px)' }, { v: 'large', l: 'Large (26px)' }, { v: 'full', l: 'Pill (999px)' }, { v: 'none', l: 'None (0px)' }] },
+      { key: 'blur', label: 'Background blur', type: 'bool' },
+      { key: 'shadow', label: 'Shadow intensity', type: 'number' }
     ],
     mount(body) {
       const head = el('div', 'cal-head');
@@ -61,29 +65,39 @@ export const toolWidgets = {
   systemMonitor: {
     name: 'System Monitor',
     desc: 'CPU and memory usage with uptime',
-    defaultSize: { w: 2, h: 1 },
-    defaults: {},
-    settings: [],
+    defaultSize: { w: 2, h: 2 },
+    defaults: {
+      showPerCore: false,
+      showNetwork: false,
+      showDisk: false,
+      showTemperature: false,
+      historyLength: 60,
+      opacity: 100,
+      borderRadius: 'default',
+      blur: true,
+      shadow: 1
+    },
+    settings: [
+      { key: 'showPerCore', label: 'Show per-core CPU', type: 'bool' },
+      { key: 'showNetwork', label: 'Show network I/O', type: 'bool' },
+      { key: 'showDisk', label: 'Show disk I/O', type: 'bool' },
+      { key: 'showTemperature', label: 'Show CPU temperature', type: 'bool' },
+      { key: 'historyLength', label: 'History length (seconds)', type: 'number' },
+      { key: 'opacity', label: 'Opacity', type: 'number' },
+      { key: 'borderRadius', label: 'Border radius', type: 'select', options: [{ v: 'default', l: 'Default' }, { v: 'small', l: 'Small (10px)' }, { v: 'medium', l: 'Medium (18px)' }, { v: 'large', l: 'Large (26px)' }, { v: 'full', l: 'Pill (999px)' }, { v: 'none', l: 'None (0px)' }] },
+      { key: 'blur', label: 'Background blur', type: 'bool' },
+      { key: 'shadow', label: 'Shadow intensity', type: 'number' }
+    ],
     mount(body, item, api) {
       const cpuHist = [];
+      const memHist = [];
+      const netHist = { rx: [], tx: [] };
+      const diskHist = { read: [], write: [] };
 
-      const mkCpuRow = () => {
+      const mkRow = (labelText) => {
         const row = el('div', 'sys-row');
         const top = el('div', 'sys-top');
-        top.appendChild(el('span', null, 'CPU Usage'));
-        const pct = el('b', null, '—');
-        top.appendChild(pct);
-        const spark = document.createElement('canvas');
-        spark.className = 'sys-spark';
-        row.append(top, spark);
-        body.appendChild(row);
-        return { pct, spark };
-      };
-
-      const mkMemRow = () => {
-        const row = el('div', 'sys-row');
-        const top = el('div', 'sys-top');
-        top.appendChild(el('span', null, 'Memory Usage'));
+        top.appendChild(el('span', null, labelText));
         const pct = el('b', null, '—');
         top.appendChild(pct);
         const bar = el('div', 'bar');
@@ -91,16 +105,51 @@ export const toolWidgets = {
         bar.appendChild(fill);
         row.append(top, bar);
         body.appendChild(row);
-        return { pct, fill };
+        return { pct, fill, bar: fill.parentElement };
       };
 
-      const cpu = mkCpuRow();
-      const mem = mkMemRow();
+      const mkSpark = (labelText, history, colorVar) => {
+        const row = el('div', 'sys-row');
+        const top = el('div', 'sys-top');
+        top.appendChild(el('span', null, labelText));
+        const pct = el('b', null, '—');
+        top.appendChild(pct);
+        const spark = document.createElement('canvas');
+        spark.className = 'sys-spark';
+        spark.dataset.colorVar = colorVar;
+        row.append(top, spark);
+        body.appendChild(row);
+        return { pct, spark, history };
+      };
+
+      const cpu = mkSpark('CPU Usage', cpuHist, '--accent');
+      const mem = mkRow('Memory Usage');
+
+      const perCoreContainer = el('div', 'sys-percore');
+      perCoreContainer.style.display = item.settings.showPerCore ? 'block' : 'none';
+      body.appendChild(perCoreContainer);
+
+      let netRow = null, diskRow = null;
+      if (item.settings.showNetwork) {
+        netRow = mkSpark('Network I/O', netHist, '--accent2');
+        netRow.spark.dataset.dual = 'true';
+        netRow.rxHistory = netHist.rx;
+        netRow.txHistory = netHist.tx;
+      }
+      if (item.settings.showDisk) {
+        diskRow = mkSpark('Disk I/O', diskHist, '--warn');
+        diskRow.spark.dataset.dual = 'true';
+        diskRow.readHistory = diskHist.read;
+        diskRow.writeHistory = diskHist.write;
+      }
+
       const foot = el('div', 'sys-foot');
       body.appendChild(foot);
 
-      const drawSpark = () => {
-        const cv = cpu.spark;
+      const cssVar = (name, fallback) => getComputedStyle(document.body).getPropertyValue(name).trim() || fallback;
+
+      const drawSpark = (obj) => {
+        const cv = obj.spark;
         if (!cv || !cv.clientWidth) return;
         const dpr = window.devicePixelRatio || 1;
         const w = cv.clientWidth;
@@ -111,40 +160,65 @@ export const toolWidgets = {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, w, h);
 
-        if (cpuHist.length < 2) return;
+        const isDual = cv.dataset.dual === 'true';
+        const histories = isDual ? [obj.rxHistory || obj.readHistory, obj.txHistory || obj.writeHistory] : [obj.history];
+        const colors = isDual
+          ? [cssVar('--accent', '#4da3ff'), cssVar('--accent2', '#a78bfa')]
+          : [cssVar(cv.dataset.colorVar || '--accent', '#4da3ff')];
 
-        const accent = cssVar('--accent', '#4da3ff');
-        const muted = cssVar('--muted', '#888');
-        const count = Math.min(cpuHist.length, 48);
-        const data = cpuHist.slice(-count);
-        const barW = Math.max(3, (w - (count - 1) * 2) / count);
+        const count = Math.min(obj.history.length, item.settings.historyLength || 60);
+        const barW = Math.max(2, (w - (count - 1) * 2) / count);
         const gap = 2;
         const maxH = h - 4;
         const startX = (w - count * (barW + gap)) / 2;
 
-        for (let i = 0; i < count; i++) {
-          const v = data[i] / 100;
-          const bh = Math.max(2, v * maxH);
-          const x = startX + i * (barW + gap);
-          const y = h - 2 - bh;
-          const alpha = 0.3 + 0.7 * (i / count);
-          ctx.globalAlpha = alpha;
-          ctx.fillStyle = accent;
-          ctx.beginPath();
-          const radius = Math.min(barW / 2, 3);
-          ctx.moveTo(x + radius, y);
-          ctx.lineTo(x + barW - radius, y);
-          ctx.quadraticCurveTo(x + barW, y, x + barW, y + radius);
-          ctx.lineTo(x + barW, h - 2);
-          ctx.lineTo(x, h - 2);
-          ctx.lineTo(x, y + radius);
-          ctx.quadraticCurveTo(x, y, x + radius, y);
-          ctx.fill();
-        }
+        histories.forEach((hist, hi) => {
+          if (hist.length < 2) return;
+          const data = hist.slice(-count);
+          const color = colors[hi % colors.length];
+          for (let i = 0; i < count; i++) {
+            const v = Math.min(1, Math.max(0, data[i] / 100));
+            const bh = Math.max(2, v * maxH);
+            const x = startX + i * (barW + gap);
+            const y = h - 2 - bh;
+            const alpha = 0.25 + 0.75 * (i / count);
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            const radius = Math.min(barW / 2, 3);
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + barW - radius, y);
+            ctx.quadraticCurveTo(x + barW, y, x + barW, y + radius);
+            ctx.lineTo(x + barW, h - 2);
+            ctx.lineTo(x, h - 2);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.fill();
+          }
+        });
         ctx.globalAlpha = 1;
       };
 
-      const cssVar = (name, fallback) => getComputedStyle(document.body).getPropertyValue(name).trim() || fallback;
+      const drawPerCore = () => {
+        perCoreContainer.replaceChildren();
+        const cores = item._lastPerCore || [];
+        if (!cores.length) return;
+        const grid = el('div', 'sys-percore-grid');
+        cores.forEach((usage, i) => {
+          const cell = el('div', 'sys-percore-cell');
+          const label = el('span', 'sys-percore-label', `Core ${i}`);
+          const bar = el('div', 'bar');
+          const fill = el('i');
+          fill.style.width = `${usage}%`;
+          if (usage > 75 && usage <= 90) bar.classList.add('warm');
+          else if (usage > 90) bar.classList.add('hot');
+          bar.appendChild(fill);
+          const val = el('span', 'sys-percore-val', `${usage.toFixed(1)}%`);
+          cell.append(label, bar, val);
+          grid.appendChild(cell);
+        });
+        perCoreContainer.appendChild(grid);
+      };
 
       const fmtUptime = (s) => {
         const d = Math.floor(s / 86400);
@@ -153,32 +227,98 @@ export const toolWidgets = {
         return `${d ? `${d}d ` : ''}${h}h ${m}m`;
       };
 
+      const fmtBytes = (b) => {
+        if (b < 1024) return `${b}B/s`;
+        if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)}KB/s`;
+        return `${(b / 1024 / 1024).toFixed(1)}MB/s`;
+      };
+
+      let prevNet = { rx: 0, tx: 0 };
+      let prevDisk = { read: 0, write: 0 };
+
+      const readProc = (path) => api.readProc(path);
+
+      const getNetStats = () => api.getNetStats();
+
+      const getDiskStats = () => api.getDiskStats();
+
+      const getTemp = () => api.getCpuTemp();
+
       const tick = async () => {
         try {
           const s = await api.getStats();
           if (typeof s.cpuUsage === 'number') {
             cpu.pct.textContent = `${s.cpuUsage}%`;
-            cpuHist.push(s.cpuUsage);
-            if (cpuHist.length > 60) cpuHist.shift();
-            drawSpark();
+            cpu.history.push(s.cpuUsage);
+            if (cpu.history.length > (item.settings.historyLength || 60)) cpu.history.shift();
+            drawSpark(cpu);
+          }
+          if (s.cpuPerCore && item.settings.showPerCore) {
+            item._lastPerCore = s.cpuPerCore;
+            drawPerCore();
           }
           const usedPct = ((s.memTotal - s.memFree) / s.memTotal) * 100;
           mem.pct.textContent = `${usedPct.toFixed(1)}%`;
           mem.fill.style.width = `${usedPct}%`;
-          const memBar = mem.fill.parentElement;
-          memBar.classList.toggle('warm', usedPct > 75 && usedPct <= 90);
-          memBar.classList.toggle('hot', usedPct > 90);
-          foot.textContent = `${s.hostname} • up ${fmtUptime(s.uptime)}`;
+          mem.bar.classList.toggle('warm', usedPct > 75 && usedPct <= 90);
+          mem.bar.classList.toggle('hot', usedPct > 90);
+          mem.history.push(usedPct);
+          if (mem.history.length > (item.settings.historyLength || 60)) mem.history.shift();
+          drawSpark(mem);
+
+          if (netRow) {
+            const net = getNetStats();
+            if (net && prevNet.rx > 0) {
+              const rxRate = (net.rx - prevNet.rx) / 2;
+              const txRate = (net.tx - prevNet.tx) / 2;
+              netRow.pct.textContent = `↓ ${fmtBytes(rxRate)} ↑ ${fmtBytes(txRate)}`;
+              netRow.rxHistory.push(Math.min(100, (rxRate / 1024 / 1024) * 100));
+              netRow.txHistory.push(Math.min(100, (txRate / 1024 / 1024) * 100));
+              if (netRow.rxHistory.length > (item.settings.historyLength || 60)) netRow.rxHistory.shift();
+              if (netRow.txHistory.length > (item.settings.historyLength || 60)) netRow.txHistory.shift();
+              drawSpark(netRow);
+            }
+            prevNet = net;
+          }
+          if (diskRow) {
+            const disk = getDiskStats();
+            if (disk && prevDisk.read > 0) {
+              const rRate = (disk.read - prevDisk.read) / 2;
+              const wRate = (disk.write - prevDisk.write) / 2;
+              diskRow.pct.textContent = `R ${fmtBytes(rRate)} W ${fmtBytes(wRate)}`;
+              diskRow.readHistory.push(Math.min(100, (rRate / 1024 / 1024) * 100));
+              diskRow.writeHistory.push(Math.min(100, (wRate / 1024 / 1024) * 100));
+              if (diskRow.readHistory.length > (item.settings.historyLength || 60)) diskRow.readHistory.shift();
+              if (diskRow.writeHistory.length > (item.settings.historyLength || 60)) diskRow.writeHistory.shift();
+              drawSpark(diskRow);
+            }
+            prevDisk = disk;
+          }
+
+          let footText = `${s.hostname} • up ${fmtUptime(s.uptime)}`;
+          if (item.settings.showTemperature) {
+            const temp = getTemp();
+            if (temp !== null) footText += ` • CPU ${temp.toFixed(1)}°C`;
+          }
+          foot.textContent = footText;
         } catch {}
       };
 
       tick();
-      const iv = setInterval(tick, 2000);
+      const iv = setInterval(tick, 1000);
 
       let ro = null;
       if (typeof ResizeObserver !== 'undefined') {
-        ro = new ResizeObserver(() => drawSpark());
+        ro = new ResizeObserver(() => {
+          drawSpark(cpu);
+          drawSpark(mem);
+          if (netRow) drawSpark(netRow);
+          if (diskRow) drawSpark(diskRow);
+        });
         ro.observe(cpu.spark);
+        ro.observe(mem.fill.parentElement);
+        if (netRow) ro.observe(netRow.spark);
+        if (diskRow) ro.observe(diskRow.spark);
       }
 
       return () => {
@@ -192,8 +332,13 @@ export const toolWidgets = {
     name: 'To-do List',
     desc: 'Checkable tasks saved automatically',
     defaultSize: { w: 2, h: 2 },
-    defaults: { items: [{ text: 'Double-click a task to rename it', done: false }] },
-    settings: [],
+    defaults: { items: [{ text: 'Double-click a task to rename it', done: false }], opacity: 100, borderRadius: 'default', blur: true, shadow: 1 },
+    settings: [
+      { key: 'opacity', label: 'Opacity', type: 'number' },
+      { key: 'borderRadius', label: 'Border radius', type: 'select', options: [{ v: 'default', l: 'Default' }, { v: 'small', l: 'Small (10px)' }, { v: 'medium', l: 'Medium (18px)' }, { v: 'large', l: 'Large (26px)' }, { v: 'full', l: 'Pill (999px)' }, { v: 'none', l: 'None (0px)' }] },
+      { key: 'blur', label: 'Background blur', type: 'bool' },
+      { key: 'shadow', label: 'Shadow intensity', type: 'number' }
+    ],
     mount(body, item, api) {
       const list = el('ul', 'todo-list');
       const addRow = el('div', 'todo-add');
@@ -298,9 +443,13 @@ export const toolWidgets = {
     name: 'Sticky Notes',
     desc: 'Quick scratchpad text, autosaved',
     defaultSize: { w: 2, h: 2 },
-    defaults: { text: '', placeholder: 'Write something…' },
+    defaults: { text: '', placeholder: 'Write something…', opacity: 100, borderRadius: 'default', blur: true, shadow: 1 },
     settings: [
-      { key: 'placeholder', label: 'Placeholder text', type: 'text' }
+      { key: 'placeholder', label: 'Placeholder text', type: 'text' },
+      { key: 'opacity', label: 'Opacity', type: 'number' },
+      { key: 'borderRadius', label: 'Border radius', type: 'select', options: [{ v: 'default', l: 'Default' }, { v: 'small', l: 'Small (10px)' }, { v: 'medium', l: 'Medium (18px)' }, { v: 'large', l: 'Large (26px)' }, { v: 'full', l: 'Pill (999px)' }, { v: 'none', l: 'None (0px)' }] },
+      { key: 'blur', label: 'Background blur', type: 'bool' },
+      { key: 'shadow', label: 'Shadow intensity', type: 'number' }
     ],
     mount(body, item, api) {
       const surface = el('div', 'notes-surface');
@@ -327,8 +476,13 @@ export const toolWidgets = {
     name: 'Quick Links',
     desc: 'Launcher buttons for your favorite sites',
     defaultSize: { w: 2, h: 2 },
-    defaults: { links: [] },
-    settings: [],
+    defaults: { links: [], opacity: 100, borderRadius: 'default', blur: true, shadow: 1 },
+    settings: [
+      { key: 'opacity', label: 'Opacity', type: 'number' },
+      { key: 'borderRadius', label: 'Border radius', type: 'select', options: [{ v: 'default', l: 'Default' }, { v: 'small', l: 'Small (10px)' }, { v: 'medium', l: 'Medium (18px)' }, { v: 'large', l: 'Large (26px)' }, { v: 'full', l: 'Pill (999px)' }, { v: 'none', l: 'None (0px)' }] },
+      { key: 'blur', label: 'Background blur', type: 'bool' },
+      { key: 'shadow', label: 'Shadow intensity', type: 'number' }
+    ],
     mount(body, item, api) {
       const wrap = el('div', 'links-wrap');
       body.appendChild(wrap);
@@ -412,9 +566,18 @@ export const toolWidgets = {
         { label: 'Music', path: '~/Music', icon: 'music' },
         { label: 'Videos', path: '~/Videos', icon: 'monitor' },
         { label: 'Terminal', path: 'terminal', icon: 'terminal' }
-      ]
+      ],
+      opacity: 100,
+      borderRadius: 'default',
+      blur: true,
+      shadow: 1
     },
-    settings: [],
+    settings: [
+      { key: 'opacity', label: 'Opacity', type: 'number' },
+      { key: 'borderRadius', label: 'Border radius', type: 'select', options: [{ v: 'default', l: 'Default' }, { v: 'small', l: 'Small (10px)' }, { v: 'medium', l: 'Medium (18px)' }, { v: 'large', l: 'Large (26px)' }, { v: 'full', l: 'Pill (999px)' }, { v: 'none', l: 'None (0px)' }] },
+      { key: 'blur', label: 'Background blur', type: 'bool' },
+      { key: 'shadow', label: 'Shadow intensity', type: 'number' }
+    ],
     mount(body, item, api) {
       const grid = el('div', 'sc-grid');
       body.appendChild(grid);

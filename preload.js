@@ -10,5 +10,9 @@ contextBridge.exposeInMainWorld('dashboard', {
   winMaximize: () => ipcRenderer.invoke('win:maximize'),
   winClose: () => ipcRenderer.invoke('win:close'),
   listDirs: () => ipcRenderer.invoke('sys:dirs'),
-  openPath: (p) => ipcRenderer.invoke('fs:openPath', p)
+  openPath: (p) => ipcRenderer.invoke('fs:openPath', p),
+  readProc: (path) => ipcRenderer.invoke('sys:readProc', path),
+  getNetStats: () => ipcRenderer.invoke('sys:netStats'),
+  getDiskStats: () => ipcRenderer.invoke('sys:diskStats'),
+  getCpuTemp: () => ipcRenderer.invoke('sys:cpuTemp')
 });

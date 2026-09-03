@@ -62,11 +62,15 @@ export const clockWidgets = {
     name: 'Analog Clock',
     desc: 'Classic clock face with smooth sweep option',
     defaultSize: { w: 2, h: 2 },
-    defaults: { timezone: 'system', numbers: true, smooth: false },
+    defaults: { timezone: 'system', numbers: true, smooth: false, opacity: 100, borderRadius: 'default', blur: true, shadow: 1 },
     settings: [
       { key: 'timezone', label: 'Timezone', type: 'tz' },
       { key: 'numbers', label: 'Show hour numbers', type: 'bool' },
-      { key: 'smooth', label: 'Smooth sweeping hand', type: 'bool' }
+      { key: 'smooth', label: 'Smooth sweeping hand', type: 'bool' },
+      { key: 'opacity', label: 'Opacity', type: 'number' },
+      { key: 'borderRadius', label: 'Border radius', type: 'select', options: [{ v: 'default', l: 'Default' }, { v: 'small', l: 'Small (10px)' }, { v: 'medium', l: 'Medium (18px)' }, { v: 'large', l: 'Large (26px)' }, { v: 'full', l: 'Pill (999px)' }, { v: 'none', l: 'None (0px)' }] },
+      { key: 'blur', label: 'Background blur', type: 'bool' },
+      { key: 'shadow', label: 'Shadow intensity', type: 'number' }
     ],
     mount(body, item) {
       body.classList.add('center');
@@ -207,12 +211,16 @@ export const clockWidgets = {
     name: 'Digital Clock',
     desc: 'Large numeric clock with date',
     defaultSize: { w: 2, h: 1 },
-    defaults: { format: '24h', seconds: true, showDate: true, timezone: 'system' },
+    defaults: { format: '24h', seconds: true, showDate: true, timezone: 'system', opacity: 100, borderRadius: 'default', blur: true, shadow: 1 },
     settings: [
       { key: 'format', label: 'Format', type: 'select', options: [{ v: '24h', l: '24-hour' }, { v: '12h', l: '12-hour' }] },
       { key: 'seconds', label: 'Show seconds', type: 'bool' },
       { key: 'showDate', label: 'Show date', type: 'bool' },
-      { key: 'timezone', label: 'Timezone', type: 'tz' }
+      { key: 'timezone', label: 'Timezone', type: 'tz' },
+      { key: 'opacity', label: 'Opacity', type: 'number' },
+      { key: 'borderRadius', label: 'Border radius', type: 'select', options: [{ v: 'default', l: 'Default' }, { v: 'small', l: 'Small (10px)' }, { v: 'medium', l: 'Medium (18px)' }, { v: 'large', l: 'Large (26px)' }, { v: 'full', l: 'Pill (999px)' }, { v: 'none', l: 'None (0px)' }] },
+      { key: 'blur', label: 'Background blur', type: 'bool' },
+      { key: 'shadow', label: 'Shadow intensity', type: 'number' }
     ],
     mount(body, item) {
       body.classList.add('center');
@@ -258,10 +266,15 @@ export const clockWidgets = {
     name: 'World Clock',
     desc: 'Track time across multiple timezones',
     defaultSize: { w: 2, h: 2 },
-    defaults: { zones: ['UTC', 'America/New_York', 'Asia/Tokyo'], format: '12h' },
+    defaults: { zones: ['UTC', 'America/New_York', 'Asia/Tokyo'], format: '12h', showDate: true, opacity: 100, borderRadius: 'default', blur: true, shadow: 1 },
     settings: [
       { key: 'zones', label: 'Timezones', type: 'zonelist' },
-      { key: 'format', label: 'Time format', type: 'select', options: [{ v: '12h', l: '12-hour (AM/PM)' }, { v: '24h', l: '24-hour' }] }
+      { key: 'format', label: 'Time format', type: 'select', options: [{ v: '12h', l: '12-hour (AM/PM)' }, { v: '24h', l: '24-hour' }] },
+      { key: 'showDate', label: 'Show date', type: 'bool' },
+      { key: 'opacity', label: 'Opacity', type: 'number' },
+      { key: 'borderRadius', label: 'Border radius', type: 'select', options: [{ v: 'default', l: 'Default' }, { v: 'small', l: 'Small (10px)' }, { v: 'medium', l: 'Medium (18px)' }, { v: 'large', l: 'Large (26px)' }, { v: 'full', l: 'Pill (999px)' }, { v: 'none', l: 'None (0px)' }] },
+      { key: 'blur', label: 'Background blur', type: 'bool' },
+      { key: 'shadow', label: 'Shadow intensity', type: 'number' }
     ],
     mount(body, item, api) {
       body.style.position = 'relative';
@@ -319,6 +332,9 @@ export const clockWidgets = {
       };
 
       const closeDropdown = () => {
+        tzDropdown.querySelectorAll('.zone-option').forEach(opt => {
+          if (opt.dataset.cleanupIv) clearInterval(Number(opt.dataset.cleanupIv));
+        });
         tzDropdown.classList.remove('open');
         highlightedIdx = -1;
       };
@@ -337,9 +353,36 @@ export const clockWidgets = {
         }
         matches.forEach((tz, i) => {
           const opt = el('div', 'zone-option');
+          opt.style.display = 'flex';
+          opt.style.alignItems = 'center';
+          opt.style.justifyContent = 'space-between';
+          opt.style.gap = '8px';
+          const left = document.createElement('div');
           const city = el('span', 'zone-option-city', cityOf(tz));
           const full = el('span', 'zone-option-tz', tz);
-          opt.append(city, full);
+          left.append(city, full);
+          const right = document.createElement('div');
+          right.style.display = 'flex';
+          right.style.alignItems = 'center';
+          right.style.gap = '8px';
+          const time = el('span', 'zone-time');
+          right.appendChild(time);
+          opt.append(left, right);
+
+          const updateOptTime = () => {
+            const p = timeParts(new Date(), tz, item.settings.format !== '24h');
+            if (item.settings.format !== '24h') {
+              time.innerHTML = '';
+              time.appendChild(document.createTextNode(`${p.h}:${p.m}`));
+              const ampm = el('span', 'zone-ampm', p.dayPeriod);
+              time.appendChild(ampm);
+            } else {
+              time.textContent = `${p.h}:${p.m}`;
+            }
+          };
+          updateOptTime();
+          const optIv = setInterval(updateOptTime, 30000);
+          opt.dataset.cleanupIv = optIv;
           opt.addEventListener('mouseenter', () => {
             highlightedIdx = i;
             tzDropdown.querySelectorAll('.zone-option').forEach((n, j) =>
@@ -350,6 +393,7 @@ export const clockWidgets = {
             e.preventDefault();
             e.stopPropagation();
             suppressBlur = true;
+            if (opt.dataset.cleanupIv) clearInterval(Number(opt.dataset.cleanupIv));
             addZone(tz);
             tzSearch.value = '';
             closeDropdown();
@@ -432,6 +476,14 @@ export const clockWidgets = {
         }
         zones.forEach((tz) => {
           const row = el('div', 'zone-row');
+          row.style.display = 'flex';
+          row.style.flexDirection = 'column';
+          row.style.gap = '2px';
+          const topRow = document.createElement('div');
+          topRow.style.display = 'flex';
+          topRow.style.alignItems = 'center';
+          topRow.style.justifyContent = 'space-between';
+          topRow.style.gap = '8px';
           const cityEl = el('span', 'zone-city', cityOf(tz));
           const tzLabel = el('span', 'zone-tz-label', tz === 'system' ? 'Local' : tz.split('/').pop().replace(/_/g, ' '));
           const time = el('span', 'zone-time');
@@ -444,9 +496,19 @@ export const clockWidgets = {
             e.stopPropagation();
             removeZone(tz);
           });
-          row.append(cityEl, tzLabel, time, rmBtn);
+          topRow.append(cityEl, tzLabel, time, rmBtn);
+          row.appendChild(topRow);
+
+          let dateEl = null;
+          if (item.settings.showDate !== false) {
+            dateEl = el('span', 'zone-date', '');
+            dateEl.style.fontSize = '10px';
+            dateEl.style.color = 'var(--muted)';
+            row.appendChild(dateEl);
+          }
+
           list.appendChild(row);
-          rows.push({ tz, time });
+          rows.push({ tz, time, dateEl });
         });
       };
 
@@ -462,6 +524,19 @@ export const clockWidgets = {
             r.time.appendChild(ampm);
           } else {
             r.time.textContent = `${p.h}:${p.m}`;
+          }
+          if (r.dateEl) {
+            try {
+              const dateStr = now.toLocaleDateString(undefined, {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                timeZone: r.tz === 'system' ? undefined : r.tz
+              });
+              r.dateEl.textContent = dateStr;
+            } catch {
+              r.dateEl.textContent = now.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+            }
           }
         }
       };

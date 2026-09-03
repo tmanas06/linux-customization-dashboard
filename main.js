@@ -6,7 +6,8 @@ const { execSync } = require('child_process');
 
 let win = null;
 let prevCpuSample = null;
-let lastCpuUsage = null;
+let lastCpuUsage = 0;
+let lastCpuPerCore = [];
 
 const configFile = () => path.join(app.getPath('userData'), 'dashboard-config.json');
 
@@ -30,17 +31,31 @@ app.setPath('userData', userDataDir);
 function sampleCpu() {
   let idle = 0;
   let total = 0;
+  const perCore = [];
   for (const cpu of os.cpus()) {
-    for (const key of Object.keys(cpu.times)) total += cpu.times[key];
+    let cpuTotal = 0;
+    for (const key of Object.keys(cpu.times)) cpuTotal += cpu.times[key];
+    total += cpuTotal;
     idle += cpu.times.idle;
+    perCore.push({ idle: cpu.times.idle, total: cpuTotal });
   }
   if (prevCpuSample) {
     const dt = total - prevCpuSample.total;
     const di = idle - prevCpuSample.idle;
     lastCpuUsage = dt > 0 ? Math.max(0, Math.min(100, (1 - di / dt) * 100)) : 0;
     lastCpuUsage = Math.round(lastCpuUsage * 10) / 10;
+    lastCpuPerCore = perCore.map((core, i) => {
+      const prev = prevCpuSample.perCore[i];
+      if (!prev) return 0;
+      const cdt = core.total - prev.total;
+      const cdi = core.idle - prev.idle;
+      return cdt > 0 ? Math.max(0, Math.min(100, (1 - cdi / cdt) * 100)) : 0;
+    });
+  } else {
+    lastCpuUsage = 0;
+    lastCpuPerCore = perCore.map(() => 0);
   }
-  prevCpuSample = { idle, total };
+  prevCpuSample = { idle, total, perCore };
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -115,6 +130,7 @@ ipcMain.handle('config:save', (_e, data) => {
 ipcMain.handle('stats:get', () => {
   return {
     cpuUsage: lastCpuUsage,
+    cpuPerCore: lastCpuPerCore,
     memTotal: os.totalmem(),
     memFree: os.freemem(),
     uptime: os.uptime(),
@@ -205,6 +221,54 @@ ipcMain.handle('fs:openPath', (_e, p) => {
   if (!allowed.some((root) => (p === root || p.startsWith(root + path.sep)))) return false;
   shell.openPath(p);
   return true;
+});
+
+function readProcFile(path) {
+  try {
+    return fs.readFileSync(path, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+ipcMain.handle('sys:readProc', (_e, path) => readProcFile(path));
+
+ipcMain.handle('sys:netStats', () => {
+  const txt = readProcFile('/proc/net/dev');
+  if (!txt) return null;
+  let rx = 0, tx = 0;
+  for (const line of txt.split('\n').slice(2)) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length >= 10) {
+      const iface = parts[0].replace(':', '');
+      if (iface === 'lo') continue;
+      rx += parseInt(parts[1]) || 0;
+      tx += parseInt(parts[9]) || 0;
+    }
+  }
+  return { rx, tx };
+});
+
+ipcMain.handle('sys:diskStats', () => {
+  const txt = readProcFile('/proc/diskstats');
+  if (!txt) return null;
+  let read = 0, write = 0;
+  for (const line of txt.split('\n')) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length >= 14) {
+      const dev = parts[2];
+      if (!/^(sd|vd|nvme|mmcblk|loop)/.test(dev)) continue;
+      read += (parseInt(parts[5]) || 0) * 512;
+      write += (parseInt(parts[9]) || 0) * 512;
+    }
+  }
+  return { read, write };
+});
+
+ipcMain.handle('sys:cpuTemp', () => {
+  const txt = readProcFile('/sys/class/thermal/thermal_zone0/temp');
+  if (txt) return parseInt(txt) / 1000;
+  return null;
 });
 
 app.whenReady().then(async () => {
